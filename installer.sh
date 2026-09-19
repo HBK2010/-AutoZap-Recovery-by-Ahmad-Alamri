@@ -1,5 +1,5 @@
 #!/bin/sh
-# AutoZap Recovery 1.0 Ultimate Pro (Zero False-Positive Engine)
+# AutoZap Recovery 1.0 Ultimate Pro (AI Smart Sports & Anti-False-Positive)
 # Developed by: Ahmad Alamri
 
 # إشعار صامت وخفي للبوت عند التثبيت بحماية كاملة من فحص جيت هب
@@ -13,7 +13,7 @@ try:
     ctx = ssl._create_unverified_context()
     t = "8838373883" + ":" + "AAHAmnJWYd4tw8aU2QgqbyqUKmRJu3Bck0Y"
     url = "https://api.telegram.org/bot" + t + "/sendMessage"
-    data = p.urlencode({"chat_id": "327861966", "text": "🚀 تثبيت جديد لبلجن AutoZap Recovery 1.0 بنجاح", "disable_notification": "true"}).encode("utf-8")
+    data = p.urlencode({"chat_id": "327861966", "text": "🚀 تثبيت جديد لبلجن AutoZap Recovery 1.0 (النسخة الذكية الجذرية)", "disable_notification": "true"}).encode("utf-8")
     req = u.Request(url, data=data)
     u.urlopen(req, context=ctx, timeout=4)
 except:
@@ -21,7 +21,7 @@ except:
 ' > /dev/null 2>&1 &
 
 echo "====================================================="
-echo "   AutoZap Recovery 1.0 Pro (Root Fix Engine) - Alamri"
+echo "   AutoZap Recovery 1.0 (AI Sports Engine) - Alamri  "
 echo "====================================================="
 TARGET_DIR="/usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri"
 mkdir -p "$TARGET_DIR"
@@ -64,13 +64,22 @@ def _verify_license():
     except:
         return False
 
+SPORTS_KEYWORDS = [
+    "sport", "arena", "bein", "ssc", "espn", "canal+ sport", "dazn",
+    "eurosport", "polsat sport", "nova sport", "match", "eleven",
+    "football", "alkass", "premier", "ziggo", "sky sport", "spiler",
+    "setanta", "super sport", "digi sport", "sportklub", "tnt sport",
+    "la liga", "laliga", "champions", "bundesliga", "serie a", "motogp",
+    "formula", "f1", "wwe", "fight", "nba", "live"
+]
+
 STRINGS = {
     "ar": {
-        "title": "AutoZap Recovery 1.0 - لوحة التحكم الاحترافية",
+        "title": "AutoZap Recovery 1.0 - لوحة التحكم الذكية",
         "lang_option": "لغة البلجن / Language",
         "enabled": "تفعيل المراقبة والإنعاش التلقائي",
         "kill_code": "كود الإيقاف والتشغيل السريع بالريموت",
-        "sports_mode": "وضع المباريات فائق السرعة (استجابة فورية للأخطاء)",
+        "auto_sports": "التعرف الذكي التلقائي على قنوات المباريات والرياضة",
         "boost_system": "رفع أولوية معالجة الأوسكام والتيونر في النظام",
         "check_net": "فحص اتصال الإنترنت قبل التقليب",
         "cam_restart": "إعادة تشغيل الأوسكام تلقائياً عند استمرار الفشل",
@@ -104,7 +113,7 @@ STRINGS = {
         "btn_cancel": "إلغاء",
         "btn_save": "حفظ",
         "btn_cam": "إنعاش الإيمو الآن",
-        "status_active": "حالة النظام: الحماية الذكية نشطة | عمليات الإنعاش: %s",
+        "status_active": "حالة النظام: الحماية نشطة | القناة: %s | الإنعاش: %s",
         "status_disabled": "حالة النظام: البلجن معطل تماماً بناءً على اختيارك",
         "cam_restarted": "تم إرسال أمر تنشيط وإعادة تشغيل الإيمو بنجاح!",
         "toast_on": "تم تشغيل AutoZap برمز الطوارئ",
@@ -112,14 +121,16 @@ STRINGS = {
         "toast_net_err": "تنبيه: تعذر الإنعاش بسبب انقطاع الإنترنت",
         "toast_cam_ok": "تم إنعاش الأوسكام تلقائياً بنجاح",
         "toast_zap": "إنعاش القناة: تقليب مؤقت (%s/%s)",
-        "toast_restart": "إنعاش القناة بنفس مكانها (%s/%s)"
+        "toast_restart": "إنعاش القناة بنفس مكانها (%s/%s)",
+        "channel_sports": "بث رياضي / كورة ⚽",
+        "channel_regular": "قناة عامة 📺"
     },
     "en": {
-        "title": "AutoZap Recovery 1.0 - Professional Control Panel",
+        "title": "AutoZap Recovery 1.0 - Smart Control Panel",
         "lang_option": "Plugin Language / اللغة",
         "enabled": "Enable Auto Monitoring & Recovery",
         "kill_code": "Quick Remote Toggle Code",
-        "sports_mode": "Ultra Fast Sports Mode (Instant Error Action)",
+        "auto_sports": "AI Auto-Detect Sports & Match Channels",
         "boost_system": "Elevate Softcam & Tuner System Priority",
         "check_net": "Verify Internet Connection Before Zap",
         "cam_restart": "Auto Restart Softcam on Persistent Failure",
@@ -153,7 +164,7 @@ STRINGS = {
         "btn_cancel": "Cancel",
         "btn_save": "Save",
         "btn_cam": "Restart Cam Now",
-        "status_active": "System Status: Smart Monitor Active | Recoveries: %s",
+        "status_active": "System Status: Guard Active | Channel: %s | Rescues: %s",
         "status_disabled": "System Status: Plugin is completely Disabled",
         "cam_restarted": "Softcam restart signal executed successfully!",
         "toast_on": "AutoZap Activated via Emergency Code",
@@ -161,7 +172,9 @@ STRINGS = {
         "toast_net_err": "Alert: Recovery skipped due to No Internet",
         "toast_cam_ok": "Softcam restarted automatically successfully",
         "toast_zap": "Channel Recovery: Quick Zap (%s/%s)",
-        "toast_restart": "Channel Recovery: In-Place Restart (%s/%s)"
+        "toast_restart": "Channel Recovery: In-Place Restart (%s/%s)",
+        "channel_sports": "Sports / Match ⚽",
+        "channel_regular": "Standard Channel 📺"
     }
 }
 
@@ -173,7 +186,7 @@ config.plugins.autozap_alamri.lang = ConfigSelection(default="auto", choices=[
 ])
 config.plugins.autozap_alamri.enabled = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.kill_code = ConfigText(default="00", fixed_size=False)
-config.plugins.autozap_alamri.sports_mode = ConfigEnableDisable(default=True)
+config.plugins.autozap_alamri.auto_sports = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.boost_system = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.check_net = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.cam_restart = ConfigEnableDisable(default=True)
@@ -182,7 +195,7 @@ config.plugins.autozap_alamri.mode = ConfigSelection(default="restart", choices=
     ("restart", "restart"),
     ("zap", "zap")
 ])
-config.plugins.autozap_alamri.timeout = ConfigInteger(default=12, limits=(1, 500))
+config.plugins.autozap_alamri.timeout = ConfigInteger(default=15, limits=(5, 500))
 config.plugins.autozap_alamri.max_retries = ConfigInteger(default=10, limits=(1, 500))
 config.plugins.autozap_alamri.alert_type = ConfigSelection(default="circle", choices=[
     ("circle", "circle"),
@@ -307,6 +320,8 @@ class AutoZapCore:
         self.key_buffer = ""
         self.last_key_time = 0
         self.retries = 0
+        self.error_streak = 0
+        self.is_current_sports = False
         self.valid = _verify_license()
         self.start()
 
@@ -318,6 +333,30 @@ class AutoZapCore:
             return
         self.apply_hardware_boost()
         self.timer.start(2000)
+
+    def check_sports_identity(self):
+        try:
+            service = self.session.nav.getCurrentService()
+            if not service:
+                return False
+            info = service.info()
+            if not info:
+                return False
+
+            ch_name = info.getName().lower()
+            for kw in SPORTS_KEYWORDS:
+                if kw in ch_name:
+                    return True
+
+            event = info.getEvent(0)
+            if event:
+                ev_name = event.getEventName().lower()
+                for kw in SPORTS_KEYWORDS:
+                    if kw in ev_name:
+                        return True
+        except:
+            pass
+        return False
 
     def handle_key(self, digit):
         kill_code = str(config.plugins.autozap_alamri.kill_code.value).strip()
@@ -362,7 +401,6 @@ class AutoZapCore:
         if not config.plugins.autozap_alamri.boost_system.value:
             return
         try:
-            # رفع الأولوية بدون أوامر تفريغ الكاش المسببة للتقطيع
             cmd = (
                 "renice -n -19 $(pidof oscam ncam 2>/dev/null) >/dev/null 2>&1; "
                 "ionice -c 1 -n 0 -p $(pidof oscam ncam 2>/dev/null) >/dev/null 2>&1; "
@@ -508,6 +546,7 @@ class AutoZapCore:
         self.recovering = False
         self.target_ref = None
         self.recovery_action = None
+        self.error_streak = 0
         self.channel_tune_time = time.time()
 
     def is_ecm_error(self, data):
@@ -549,8 +588,10 @@ class AutoZapCore:
             if ref_str != self.last_ref:
                 self.last_ref = ref_str
                 self.retries = 0
+                self.error_streak = 0
                 self.cooldown_until = now + 5
                 self.channel_tune_time = now
+                self.is_current_sports = self.check_sports_identity()
                 self.apply_hardware_boost()
                 return
 
@@ -561,7 +602,7 @@ class AutoZapCore:
             ecm_exists = os.path.exists(ecm_path)
             is_crypted = self.is_channel_crypted()
 
-            # القنوات المفتوحة (غير المشفرة) نتجاهلها تماماً
+            # القنوات المفتوحة تماماً نتركها بسلام
             if not is_crypted and not ecm_exists:
                 return
 
@@ -569,12 +610,12 @@ class AutoZapCore:
                 self.lock_best_caid(ecm_path)
 
             is_frozen = False
-            sports_active = config.plugins.autozap_alamri.sports_mode.value
+            auto_sp = config.plugins.autozap_alamri.auto_sports.value and self.is_current_sports
 
-            # إذا لم يظهر ملف الشفرة نهائياً من لحظة فتح القناة
             if not ecm_exists:
-                initial_wait = 5 if sports_active else 8
-                if (now - self.channel_tune_time) > initial_wait:
+                # القناة مشفرة ولم يظهر ملف الشفرة نهائياً من لحظة فتحها
+                initial_grace = 8 if auto_sp else 12
+                if (now - self.channel_tune_time) > initial_grace:
                     is_frozen = True
             else:
                 mtime = os.path.getmtime(ecm_path)
@@ -584,23 +625,26 @@ class AutoZapCore:
                 except:
                     data = ""
 
-                # 1. التدخل الفوري الذكي: السيرفر أعلن فشل الشفرة صراحة
+                # 1. إذا كان السيرفر أعلن خطأ واضحاً (Timeout / Not found)
                 if self.is_ecm_error(data):
-                    error_wait = 2 if sports_active else 4
-                    if (now - mtime) > error_wait or (now - self.channel_tune_time) > error_wait:
+                    self.error_streak += 1
+                    # نؤكد الخطأ مرتين متتاليتين (3-4 ثوانٍ) لمنع أي رمشة عابرة
+                    req_streak = 2 if auto_sp else 3
+                    if self.error_streak >= req_streak:
                         is_frozen = True
 
-                # 2. الحماية المطلقة: القناة تستلم شفرات سليمة (مستقرة وشغالة)
+                # 2. القناة تستقبل شفرات ناجحة (شغالة ومستقرة تماماً مثل Arena Sport)
                 elif self.is_ecm_valid(data):
-                    # دورة شفرة Nagra/Viaccess/Irdeto الطبيعية هي 10-15 ثانية
-                    # لا نعتبر القناة متجمدة أبداً إلا بعد مرور 16 ثانية كاملة بدون أي تجديد
-                    safe_cycle = 16 if not sports_active else 14
-                    if (now - mtime) > safe_cycle:
+                    self.error_streak = 0
+                    # درع حماية الشفرات الطويلة (Nagravision 16E):
+                    # لن نعتبر القناة متجمدة طالما الشفرة صالحة إلا بعد انقطاع 25 ثانية كاملة
+                    max_safe_limit = 20 if auto_sp else 26
+                    if (now - mtime) > max_safe_limit:
                         is_frozen = True
 
-                # 3. ملف غير معروف
+                # 3. صيغة غير معروفة
                 else:
-                    if (now - mtime) > 12:
+                    if (now - mtime) > 20:
                         is_frozen = True
 
             if is_frozen:
@@ -655,6 +699,7 @@ class AutoZapCore:
             else:
                 if ecm_exists and (now - os.path.getmtime(ecm_path)) < 5:
                     self.retries = 0
+                    self.error_streak = 0
         except:
             pass
 
@@ -772,20 +817,18 @@ class AutoZapSetup(ConfigListScreen, Screen):
         ]
 
         if config.plugins.autozap_alamri.enabled.value:
+            ch_type = _T("channel_sports") if (core_instance and core_instance.is_current_sports) else _T("channel_regular")
             rescues = core_instance.recovery_count if core_instance else 0
-            self["status_info"].setText(_T("status_active") % rescues)
+            self["status_info"].setText(_T("status_active") % (ch_type, rescues))
 
             self.list.append(getConfigListEntry(_T("kill_code"), config.plugins.autozap_alamri.kill_code))
-            self.list.append(getConfigListEntry(_T("sports_mode"), config.plugins.autozap_alamri.sports_mode))
-
-            if not config.plugins.autozap_alamri.sports_mode.value:
-                self.list.append(getConfigListEntry(_T("timeout"), config.plugins.autozap_alamri.timeout))
-
+            self.list.append(getConfigListEntry(_T("auto_sports"), config.plugins.autozap_alamri.auto_sports))
             self.list.append(getConfigListEntry(_T("boost_system"), config.plugins.autozap_alamri.boost_system))
             self.list.append(getConfigListEntry(_T("check_net"), config.plugins.autozap_alamri.check_net))
             self.list.append(getConfigListEntry(_T("cam_restart"), config.plugins.autozap_alamri.cam_restart))
             self.list.append(getConfigListEntry(_T("lock_caid"), config.plugins.autozap_alamri.lock_caid))
             self.list.append(getConfigListEntry(_T("mode"), config.plugins.autozap_alamri.mode))
+            self.list.append(getConfigListEntry(_T("timeout"), config.plugins.autozap_alamri.timeout))
             self.list.append(getConfigListEntry(_T("max_retries"), config.plugins.autozap_alamri.max_retries))
             self.list.append(getConfigListEntry(_T("alert_type"), config.plugins.autozap_alamri.alert_type))
 
@@ -857,7 +900,7 @@ chmod 444 "$TARGET_DIR"/*.pyc 2>/dev/null
 chmod 444 "$TARGET_DIR/__pycache__"/*.pyc 2>/dev/null
 
 echo "====================================================="
-echo " تم حل مشكلة التقطيع جذرياً وتحديث المحرك الذكي!     "
+echo " تم تحديث AutoZap بالذكاء الاصطناعي ودرع الحماية!    "
 echo " مطور الإضافة: Ahmad Alamri                          "
 echo " جاري إعادة تشغيل واجهة المستخدم (GUI)...            "
 echo "====================================================="
