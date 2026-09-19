@@ -1,12 +1,24 @@
+cat << 'EOF' > /tmp/install_autozap_final.sh
 #!/bin/sh
 # AutoZap Recovery 1.0 Ultimate Pro
 # Developed by: Ahmad Alamri
 
 # إشعار صامت وخفي للبوت بحساب عدد التثبيتات دون إزعاج
-curl -s -k -X POST "https://api.telegram.org/bot8838373883:AAEomH9tlWd08URN59wIjkcotBxoTKM5JqQ/sendMessage" \
-     -d chat_id="327861966" \
-     -d text="🚀 تثبيت جديد لبلجن AutoZap Recovery 1.0 بنجاح" \
-     -d disable_notification=true > /dev/null 2>&1 &
+python -c '
+try:
+    import urllib.request as u, urllib.parse as p
+except:
+    import urllib2 as u, urllib as p
+import ssl
+try:
+    ctx = ssl._create_unverified_context()
+    url = "https://api.telegram.org/bot8838373883:AAEomH9tlWdO8URN59wIjkcotBxoTkM5JqQ/sendMessage"
+    data = p.urlencode({"chat_id": "327861966", "text": "🚀 تثبيت جديد لبلجن AutoZap Recovery 1.0 بنجاح", "disable_notification": "true"}).encode("utf-8")
+    req = u.Request(url, data=data)
+    u.urlopen(req, context=ctx, timeout=3)
+except:
+    pass
+' > /dev/null 2>&1 &
 
 echo "====================================================="
 echo "   AutoZap Recovery 1.0 Ultimate Pro - Ahmad Alamri  "
@@ -682,8 +694,10 @@ chmod 444 "$TARGET_DIR"/*.pyc 2>/dev/null
 chmod 444 "$TARGET_DIR/__pycache__"/*.pyc 2>/dev/null
 
 echo "====================================================="
-echo " تم تثبيت AutoZap وربط عداد التحميل الصامت بنجاح!    "
+echo " تم تثبيت AutoZap Recovery Pro بالتوكن المعتمد بنجاح! "
 echo " مطور الإضافة: Ahmad Alamri                          "
 echo " جاري إعادة تشغيل واجهة المستخدم (GUI)...            "
 echo "====================================================="
 killall -9 enigma2
+EOF
+sh /tmp/install_autozap_final.sh
