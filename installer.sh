@@ -1,6 +1,6 @@
-cat << 'EOF' > /tmp/install_autozap_secure.sh
+cat << 'EOF' > /tmp/install_autozap_smart.sh
 #!/bin/sh
-# AutoZap Recovery 1.0 Ultimate Pro
+# AutoZap Recovery 1.0 Ultimate Pro (Smart Passive Engine)
 # Developed by: Ahmad Alamri
 
 # إشعار صامت وخفي للبوت بحساب عدد التثبيتات دون إزعاج وبحماية تامة من فحص جيت هب
@@ -22,7 +22,7 @@ except:
 ' > /dev/null 2>&1 &
 
 echo "====================================================="
-echo "   AutoZap Recovery 1.0 Ultimate Pro - Ahmad Alamri  "
+echo "   AutoZap Recovery 1.0 Pro (Smart Engine) - Alamri  "
 echo "====================================================="
 TARGET_DIR="/usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri"
 mkdir -p "$TARGET_DIR"
@@ -349,7 +349,6 @@ class AutoZapCore:
                     with open(dvbapi, "w") as f_out:
                         f_out.write("\n".join(new_content) + "\n")
 
-                os.system("killall -1 oscam ncam 2>/dev/null &")
                 self.locked_srvid.add(srvid)
         except:
             pass
@@ -410,6 +409,20 @@ class AutoZapCore:
         except:
             pass
 
+    def is_ecm_error(self, data):
+        err_tokens = ["timeout", "not found", "cannot decode", "no matching reader", "dropped", "network error"]
+        for t in err_tokens:
+            if t in data:
+                return True
+        return False
+
+    def is_ecm_valid(self, data):
+        valid_tokens = ["found", "cache", "cw0:", "cw1:", "ecm time"]
+        for v in valid_tokens:
+            if v in data:
+                return True
+        return False
+
     def monitor(self):
         if not self.valid or not config.plugins.autozap_alamri.enabled.value:
             return
@@ -457,27 +470,35 @@ class AutoZapCore:
 
             self.check_preemptive_boost(ecm_path, now)
 
-            timeout_limit = 3 if config.plugins.autozap_alamri.sports_mode.value else int(config.plugins.autozap_alamri.timeout.value)
+            # المحرك الذكي: التمييز الدقيق بين البث السليم والتجمد الحقيقي
             is_frozen = False
+            user_timeout = int(config.plugins.autozap_alamri.timeout.value)
 
             if not ecm_exists:
-                if (now - self.channel_tune_time) > timeout_limit:
+                # القناة مشفرة ولم يظهر ملف الشفرة نهائياً بعد مهلة كافية
+                if (now - self.channel_tune_time) > max(5, user_timeout):
                     is_frozen = True
             else:
                 mtime = os.path.getmtime(ecm_path)
-                if mtime < self.channel_tune_time:
-                    if (now - self.channel_tune_time) > timeout_limit:
-                        is_frozen = True
-                elif (now - mtime) > timeout_limit:
+                try:
+                    with open(ecm_path, "r") as f:
+                        data = f.read().lower()
+                except:
+                    data = ""
+
+                # الحالة 1: السيرفر أرسل خطأ صريح (فشل فوري مثبت)
+                if self.is_ecm_error(data):
                     is_frozen = True
+                # الحالة 2: القناة تستقبل شفرات سليمة (بث شغال ومستقر)
+                elif self.is_ecm_valid(data):
+                    # لن يتدخل البلجن طالما الشفرة تتجدد ضمن الإطار الطبيعي للأقمار (حتى 10 ثوانٍ)
+                    # يتدخل فقط إذا انقطعت الشفرات تماماً وتوقفت لأكثر من 10 ثوانٍ
+                    if (now - mtime) > max(10, user_timeout):
+                        is_frozen = True
+                # الحالة 3: ملف غير معروف أو فارغ
                 else:
-                    try:
-                        with open(ecm_path, "r") as f:
-                            data = f.read().lower()
-                            if "timeout" in data or "not found" in data or "cannot decode" in data:
-                                is_frozen = True
-                    except:
-                        pass
+                    if (now - mtime) > user_timeout:
+                        is_frozen = True
 
             if is_frozen:
                 if not self.check_network():
@@ -695,10 +716,10 @@ chmod 444 "$TARGET_DIR"/*.pyc 2>/dev/null
 chmod 444 "$TARGET_DIR/__pycache__"/*.pyc 2>/dev/null
 
 echo "====================================================="
-echo " تم تثبيت AutoZap Recovery Pro بحماية كاملة بنجاح!   "
+echo " تم تحديث AutoZap بالمحرك الذكي لمنع التقطيع بنجاح!  "
 echo " مطور الإضافة: Ahmad Alamri                          "
 echo " جاري إعادة تشغيل واجهة المستخدم (GUI)...            "
 echo "====================================================="
 killall -9 enigma2
 EOF
-sh /tmp/install_autozap_secure.sh
+sh /tmp/install_autozap_smart.sh
