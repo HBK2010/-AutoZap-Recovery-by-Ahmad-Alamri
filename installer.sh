@@ -2,7 +2,6 @@
 # =====================================================================
 # AutoZap Recovery 1.0 Ultimate Pro (AI Smart Sports & Zero False-Positive)
 # Developed exclusively by: Ahmad Alamri
-# Encrypted Core Engine (Tamper-Proof Binary Payload)
 # =====================================================================
 
 # إشعار الإحصائيات المشفر عبر Cloudflare Worker
@@ -11,185 +10,865 @@
 echo "====================================================="
 echo "   AutoZap Recovery 1.0 Ultimate Pro - Ahmad Alamri  "
 echo "====================================================="
-echo "[*] Preparing secure installation environment..."
+echo "[*] Preparing installation environment..."
 
 TARGET_DIR="/usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri"
 mkdir -p "$TARGET_DIR"
 rm -rf "$TARGET_DIR"/*
 
-# ملف بدء الموديول
 cat << 'PYEOF' > "$TARGET_DIR/__init__.py"
 # -*- coding: utf-8 -*-
 # AutoZap Recovery by Ahmad Alamri
 PYEOF
 
-echo "[*] Unpacking encrypted core engine..."
+cat << 'PYEOF' > "$TARGET_DIR/plugin.py"
+# -*- coding: utf-8 -*-
+import base64
+import os
+import re
+import socket
+import time
 
-# فحص إصدار البايثون المعتمد في الرسيفر
-if command -v python3 >/dev/null 2>&1; then
-    PY_BIN="python3"
-else
-    PY_BIN="python"
-fi
+_D = base64.b64decode(b'QWhtYWQgQWxhbXJp').decode('utf-8')
+_S = base64.b64decode(b'QXV0b1phcCBSZWNvdmVyeSB2MS4wIC0gRGV2ZWxvcGVkIGJ5OiBhaG1hZCBhbGFtcmk=').decode('utf-8').lower()
 
-# فك المحرك المشفر بسلاسة تامة
-$PY_BIN - << 'DECODE_EOF'
-import base64, zlib
-payload = b"""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"""
-target = "/usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri/plugin.py"
-with open(target, "wb") as f:
-    f.write(zlib.decompress(base64.b64decode(payload)))
-DECODE_EOF
+from Plugins.Plugin import PluginDescriptor
+from Screens.Screen import Screen
+from Components.ConfigList import ConfigListScreen
+from Components.ActionMap import ActionMap
+from Components.Sources.StaticText import StaticText
+from Components.Label import Label
+from Components.Language import language
+from Components.config import (
+    config, ConfigSubsection, ConfigEnableDisable, 
+    ConfigInteger, ConfigSelection, ConfigText, getConfigListEntry
+)
+from enigma import eTimer, getDesktop, iServiceInformation
 
-echo "[*] Compiling native bytecode for hardware architecture..."
-$PY_BIN -m compileall "$TARGET_DIR" > /dev/null 2>&1
+def _verify_license():
+    try:
+        t = "AutoZap Recovery v1.0 - Developed by: Ahmad Alamri".lower()
+        if _D != "Ahmad Alamri" or t != _S:
+            return False
+        return True
+    except:
+        return False
 
-# نقل ملفات البايت كود المجمعة
+SPORTS_KEYWORDS = [
+    "sport", "arena", "bein", "ssc", "espn", "canal+ sport", "dazn",
+    "eurosport", "polsat sport", "nova sport", "match", "eleven",
+    "football", "alkass", "premier", "ziggo", "sky sport", "spiler",
+    "setanta", "super sport", "digi sport", "sportklub", "tnt sport",
+    "la liga", "laliga", "champions", "bundesliga", "serie a", "motogp",
+    "formula", "f1", "wwe", "fight", "nba", "live"
+]
+
+STRINGS = {
+    "ar": {
+        "title": "AutoZap Recovery 1.0 - لوحة التحكم الذكية",
+        "lang_option": "لغة البلجن / Language",
+        "enabled": "تفعيل المراقبة والإنعاش التلقائي",
+        "kill_code": "كود الإيقاف والتشغيل السريع بالريموت",
+        "auto_sports": "التعرف الذكي التلقائي على قنوات المباريات والرياضة",
+        "boost_system": "رفع أولوية معالجة الأوسكام والتيونر في النظام",
+        "check_net": "فحص اتصال الإنترنت قبل التقليب",
+        "cam_restart": "إعادة تشغيل الأوسكام تلقائياً عند استمرار الفشل",
+        "lock_caid": "تثبيت أسرع شفرة ومنع التنقل العشوائي للكايد",
+        "mode": "طريقة الإنعاش عند تجمد القناة",
+        "mode_restart": "إعادة تشغيل القناة مكانها دون تقليب",
+        "mode_zap": "تقليب مرئي لقناة مجاورة والعودة",
+        "timeout": "مهلة انقطاع البث قبل التدخل (بالثواني)",
+        "max_retries": "أقصى عدد محاولات قبل إعادة تشغيل الإيمو",
+        "alert_type": "شكل تنبيه الإنعاش على الشاشة",
+        "type_circle": "دائرة ممتلئة (نقطة)",
+        "type_text": "إشعار كتابي (نص)",
+        "type_silent": "الوضع الصامت (بدون تنبيه)",
+        "circle_size": "حجم الدائرة الممتلئة (10 إلى 150)",
+        "alert_pos": "مكان ظهور التنبيه على الشاشة",
+        "pos_tr": "أعلى اليمين",
+        "pos_tl": "أعلى اليسار",
+        "pos_br": "أسفل اليمين",
+        "pos_bl": "أسفل اليسار",
+        "pos_cnt": "وسط الشاشة",
+        "alert_size": "حجم التنبيه على الشاشة",
+        "sz_sm": "صغير",
+        "sz_md": "متوسط",
+        "sz_lg": "كبير",
+        "alert_color": "لون التنبيه",
+        "col_gr": "أخضر",
+        "col_gd": "أصفر ذهبي",
+        "col_bl": "أزرق سماوي",
+        "col_rd": "أحمر",
+        "col_wh": "أبيض",
+        "btn_cancel": "إلغاء",
+        "btn_save": "حفظ",
+        "btn_cam": "إنعاش الإيمو الآن",
+        "status_active": "حالة النظام: الحماية نشطة | القناة: %s | الإنعاش: %s",
+        "status_disabled": "حالة النظام: البلجن معطل تماماً بناءً على اختيارك",
+        "cam_restarted": "تم إرسال أمر تنشيط وإعادة تشغيل الإيمو بنجاح!",
+        "toast_on": "تم تشغيل AutoZap برمز الطوارئ",
+        "toast_off": "تم تعطيل AutoZap برمز الطوارئ",
+        "toast_net_err": "تنبيه: تعذر الإنعاش بسبب انقطاع الإنترنت",
+        "toast_cam_ok": "تم إنعاش الأوسكام تلقائياً بنجاح",
+        "toast_zap": "إنعاش القناة: تقليب مؤقت (%s/%s)",
+        "toast_restart": "إنعاش القناة بنفس مكانها (%s/%s)",
+        "channel_sports": "بث رياضي / كورة ⚽",
+        "channel_regular": "قناة عامة 📺"
+    },
+    "en": {
+        "title": "AutoZap Recovery 1.0 - Smart Control Panel",
+        "lang_option": "Plugin Language / اللغة",
+        "enabled": "Enable Auto Monitoring & Recovery",
+        "kill_code": "Quick Remote Toggle Code",
+        "auto_sports": "AI Auto-Detect Sports & Match Channels",
+        "boost_system": "Elevate Softcam & Tuner System Priority",
+        "check_net": "Verify Internet Connection Before Zap",
+        "cam_restart": "Auto Restart Softcam on Persistent Failure",
+        "lock_caid": "Lock Fastest ECM & Prevent CAID Hopping",
+        "mode": "Recovery Method on Freeze",
+        "mode_restart": "Restart channel in place (No zap)",
+        "mode_zap": "Zap to adjacent channel and return",
+        "timeout": "ECM Loss Timeout Before Action (seconds)",
+        "max_retries": "Max Retries Before Softcam Restart",
+        "alert_type": "On-Screen Alert Notification Style",
+        "type_circle": "Filled Circle (Dot)",
+        "type_text": "Text Notification Banner",
+        "type_silent": "Silent Mode (No Notification)",
+        "circle_size": "Filled Circle Size (10 to 150)",
+        "alert_pos": "Notification Screen Position",
+        "pos_tr": "Top Right",
+        "pos_tl": "Top Left",
+        "pos_br": "Bottom Right",
+        "pos_bl": "Bottom Left",
+        "pos_cnt": "Center Screen",
+        "alert_size": "Notification Banner Size",
+        "sz_sm": "Small",
+        "sz_md": "Medium",
+        "sz_lg": "Large",
+        "alert_color": "Notification Color",
+        "col_gr": "Green",
+        "col_gd": "Golden Yellow",
+        "col_bl": "Sky Blue",
+        "col_rd": "Red",
+        "col_wh": "White",
+        "btn_cancel": "Cancel",
+        "btn_save": "Save",
+        "btn_cam": "Restart Cam Now",
+        "status_active": "System Status: Guard Active | Channel: %s | Rescues: %s",
+        "status_disabled": "System Status: Plugin is completely Disabled",
+        "cam_restarted": "Softcam restart signal executed successfully!",
+        "toast_on": "AutoZap Activated via Emergency Code",
+        "toast_off": "AutoZap Disabled via Emergency Code",
+        "toast_net_err": "Alert: Recovery skipped due to No Internet",
+        "toast_cam_ok": "Softcam restarted automatically successfully",
+        "toast_zap": "Channel Recovery: Quick Zap (%s/%s)",
+        "toast_restart": "Channel Recovery: In-Place Restart (%s/%s)",
+        "channel_sports": "Sports / Match ⚽",
+        "channel_regular": "Standard Channel 📺"
+    }
+}
+
+config.plugins.autozap_alamri = ConfigSubsection()
+config.plugins.autozap_alamri.lang = ConfigSelection(default="auto", choices=[
+    ("auto", "تلقائي حسب لغة الجهاز (System Default)"),
+    ("ar", "العربية (Arabic)"),
+    ("en", "English")
+])
+config.plugins.autozap_alamri.enabled = ConfigEnableDisable(default=True)
+config.plugins.autozap_alamri.kill_code = ConfigText(default="00", fixed_size=False)
+config.plugins.autozap_alamri.auto_sports = ConfigEnableDisable(default=True)
+config.plugins.autozap_alamri.boost_system = ConfigEnableDisable(default=True)
+config.plugins.autozap_alamri.check_net = ConfigEnableDisable(default=True)
+config.plugins.autozap_alamri.cam_restart = ConfigEnableDisable(default=True)
+config.plugins.autozap_alamri.lock_caid = ConfigEnableDisable(default=True)
+config.plugins.autozap_alamri.mode = ConfigSelection(default="restart", choices=[
+    ("restart", "restart"),
+    ("zap", "zap")
+])
+config.plugins.autozap_alamri.timeout = ConfigInteger(default=15, limits=(5, 500))
+config.plugins.autozap_alamri.max_retries = ConfigInteger(default=10, limits=(1, 500))
+config.plugins.autozap_alamri.alert_type = ConfigSelection(default="circle", choices=[
+    ("circle", "circle"),
+    ("text", "text"),
+    ("silent", "silent")
+])
+config.plugins.autozap_alamri.circle_size = ConfigInteger(default=40, limits=(10, 150))
+config.plugins.autozap_alamri.alert_pos = ConfigSelection(default="top_right", choices=[
+    ("top_right", "top_right"),
+    ("top_left", "top_left"),
+    ("bottom_right", "bottom_right"),
+    ("bottom_left", "bottom_left"),
+    ("center", "center")
+])
+config.plugins.autozap_alamri.alert_size = ConfigSelection(default="large", choices=[
+    ("small", "small"),
+    ("medium", "medium"),
+    ("large", "large")
+])
+config.plugins.autozap_alamri.alert_color = ConfigSelection(default="#00ff00", choices=[
+    ("#00ff00", "green"),
+    ("#f0a500", "gold"),
+    ("#00bfff", "blue"),
+    ("#ff3333", "red"),
+    ("#ffffff", "white")
+])
+
+def get_current_lang():
+    opt = config.plugins.autozap_alamri.lang.value
+    if opt in ("ar", "en"):
+        return opt
+    try:
+        sys_l = language.getLanguage()[:2].lower()
+        return "ar" if sys_l == "ar" else "en"
+    except:
+        return "ar"
+
+def _T(key):
+    l = get_current_lang()
+    return STRINGS.get(l, STRINGS["ar"]).get(key, key)
+
+class AutoZapToast(Screen):
+    def __init__(self, session, msg, color="#00ff00", pos="top_right", is_circle=False, circle_sz=40, size_choice="large"):
+        try:
+            desk = getDesktop(0).size()
+            dw, dh = desk.width(), desk.height()
+        except:
+            dw, dh = 1920, 1080
+
+        margin_x, margin_y = 50, 60
+
+        if is_circle:
+            cs = int(circle_sz)
+            w, h = cs + 20, cs + 20
+            font_sz = cs
+            display_text = "●"
+            bg_color = "transparent"
+        else:
+            sz = str(size_choice)
+            if sz == "small":
+                w, h, font_sz = 360, 55, 24
+            elif sz == "large":
+                w, h, font_sz = 700, 100, 42
+            else:
+                w, h, font_sz = 520, 75, 32
+            display_text = msg
+            bg_color = "#b0000000"
+
+        if pos == "top_right":
+            x, y = dw - w - margin_x, margin_y
+        elif pos == "top_left":
+            x, y = margin_x, margin_y
+        elif pos == "bottom_right":
+            x, y = dw - w - margin_x, dh - h - margin_y
+        elif pos == "bottom_left":
+            x, y = margin_x, dh - h - margin_y
+        else:
+            x, y = (dw - w) // 2, (dh - h) // 2
+
+        self.skin = """
+        <screen name="AutoZapToast" position="%d,%d" size="%d,%d" zPosition="150" backgroundColor="%s" flags="wfNoBorder">
+            <widget name="msg" position="0,0" size="%d,%d" font="Regular;%d" halign="center" valign="center" foregroundColor="%s" backgroundColor="%s" transparent="1" />
+        </screen>""" % (x, y, w, h, bg_color, w, h, font_sz, color, bg_color)
+
+        Screen.__init__(self, session)
+        self.session = session
+        self["msg"] = Label(display_text)
+        self.timer = eTimer()
+        try:
+            self.timer_conn = self.timer.timeout.connect(self.close)
+        except:
+            self.timer.callback.append(self.close)
+        self.onLayoutFinish.append(self.start_timer)
+
+    def start_timer(self):
+        self.timer.start(2500, True)
+
+class AutoZapCore:
+    def __init__(self, session):
+        self.session = session
+        self.timer = eTimer()
+        try:
+            self.timer_conn = self.timer.timeout.connect(self.monitor)
+        except:
+            self.timer.callback.append(self.monitor)
+
+        self.return_timer = eTimer()
+        try:
+            self.return_timer_conn = self.return_timer.timeout.connect(self.finish_recovery)
+        except:
+            self.return_timer.callback.append(self.finish_recovery)
+
+        self.last_ref = None
+        self.target_ref = None
+        self.recovery_action = None
+        self.recovering = False
+        self.channel_tune_time = 0
+        self.cooldown_until = 0
+        self.last_boost_time = 0
+        self.recovery_count = 0
+        self.locked_srvid = set()
+        self.key_buffer = ""
+        self.last_key_time = 0
+        self.retries = 0
+        self.error_streak = 0
+        self.is_current_sports = False
+        self.valid = _verify_license()
+        self.start()
+
+    def start(self):
+        if not self.valid:
+            return
+        if not config.plugins.autozap_alamri.enabled.value:
+            self.timer.stop()
+            return
+        self.apply_hardware_boost()
+        self.timer.start(2000)
+
+    def check_sports_identity(self):
+        try:
+            service = self.session.nav.getCurrentService()
+            if not service:
+                return False
+            info = service.info()
+            if not info:
+                return False
+
+            ch_name = info.getName().lower()
+            for kw in SPORTS_KEYWORDS:
+                if kw in ch_name:
+                    return True
+
+            event = info.getEvent(0)
+            if event:
+                ev_name = event.getEventName().lower()
+                for kw in SPORTS_KEYWORDS:
+                    if kw in ev_name:
+                        return True
+        except:
+            pass
+        return False
+
+    def handle_key(self, digit):
+        kill_code = str(config.plugins.autozap_alamri.kill_code.value).strip()
+        if not kill_code:
+            return
+        now = time.time()
+        if (now - self.last_key_time) > 3.0:
+            self.key_buffer = ""
+        self.last_key_time = now
+        self.key_buffer += digit
+
+        if len(self.key_buffer) > len(kill_code):
+            self.key_buffer = self.key_buffer[-len(kill_code):]
+
+        if self.key_buffer == kill_code:
+            self.key_buffer = ""
+            self.toggle_kill_switch()
+
+    def toggle_kill_switch(self):
+        cur = config.plugins.autozap_alamri.enabled.value
+        new_val = not cur
+        config.plugins.autozap_alamri.enabled.value = new_val
+        config.plugins.autozap_alamri.enabled.save()
+        config.plugins.autozap_alamri.save()
+        self.recovering = False
+
+        if new_val:
+            msg = _T("toast_on")
+            col = "#00ff00"
+            self.start()
+        else:
+            msg = _T("toast_off")
+            col = "#ff3333"
+            self.timer.stop()
+
+        try:
+            self.session.open(AutoZapToast, msg, col, "center", False, 40, "large")
+        except:
+            pass
+
+    def apply_hardware_boost(self):
+        if not config.plugins.autozap_alamri.boost_system.value:
+            return
+        try:
+            cmd = (
+                "renice -n -19 $(pidof oscam ncam 2>/dev/null) >/dev/null 2>&1; "
+                "ionice -c 1 -n 0 -p $(pidof oscam ncam 2>/dev/null) >/dev/null 2>&1; "
+                "sysctl -w net.core.rmem_max=8388608 >/dev/null 2>&1; "
+                "sysctl -w net.core.wmem_max=8388608 >/dev/null 2>&1; "
+                "sysctl -w net.ipv4.tcp_fastopen=3 >/dev/null 2>&1"
+            )
+            os.system(cmd + " &")
+        except:
+            pass
+
+    def check_network(self):
+        if not config.plugins.autozap_alamri.check_net.value:
+            return True
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.6)
+            s.connect(("1.1.1.1", 53))
+            s.close()
+            return True
+        except:
+            return False
+
+    def restart_softcam(self):
+        try:
+            cmd = (
+                "killall -9 oscam ncam 2>/dev/null; sleep 1; "
+                "for bin in /usr/bin/oscam* /usr/bin/ncam*; do "
+                'if [ -x "$bin" ]; then "$bin" -b & break; fi; done'
+            )
+            os.system(cmd + " &")
+            self.trigger_alert(_T("toast_cam_ok"))
+        except:
+            pass
+
+    def trigger_alert(self, msg_text, force_color=None):
+        atype = config.plugins.autozap_alamri.alert_type.value
+        if atype == "silent":
+            return
+
+        is_circ = (atype == "circle")
+        circ_sz = config.plugins.autozap_alamri.circle_size.value
+        color = force_color if force_color else config.plugins.autozap_alamri.alert_color.value
+        pos = config.plugins.autozap_alamri.alert_pos.value
+        sz = config.plugins.autozap_alamri.alert_size.value
+
+        try:
+            from Tools.Notifications import AddNotification
+            AddNotification(AutoZapToast, msg_text, color, pos, is_circ, circ_sz, sz)
+        except:
+            try:
+                self.session.open(AutoZapToast, msg_text, color, pos, is_circ, circ_sz, sz)
+            except:
+                pass
+
+    def get_dvbapi_files(self):
+        found = []
+        dirs = [
+            "/etc/tuxbox/config/oscam",
+            "/etc/tuxbox/config/ncam",
+            "/etc/tuxbox/config/oscam-emu",
+            "/etc/tuxbox/config/oscam-trunk",
+            "/etc/tuxbox/config",
+            "/var/tuxbox/config"
+        ]
+        for d in dirs:
+            for name in ["oscam.dvbapi", "ncam.dvbapi"]:
+                p = os.path.join(d, name)
+                if os.path.exists(p) and p not in found:
+                    found.append(p)
+        return found
+
+    def lock_best_caid(self, ecm_path):
+        if not config.plugins.autozap_alamri.lock_caid.value:
+            return
+        try:
+            with open(ecm_path, "r") as f:
+                content = f.read().lower()
+
+            if "timeout" in content or "not found" in content or "cannot decode" in content:
+                return
+
+            caid_m = re.search(r'caid:\s*0x([0-9a-f]+)', content)
+            prov_m = re.search(r'prov:\s*0x([0-9a-f]+)', content)
+            srv_m = re.search(r'srvid:\s*0x([0-9a-f]+)', content)
+
+            if caid_m and srv_m:
+                caid = caid_m.group(1).zfill(4)
+                srvid = srv_m.group(1).zfill(4)
+                prov = prov_m.group(1).zfill(6) if prov_m else "000000"
+
+                if srvid in self.locked_srvid:
+                    return
+
+                rule = "P: %s:%s:%s 1" % (caid, prov, srvid)
+                target_files = self.get_dvbapi_files()
+
+                for dvbapi in target_files:
+                    existing = []
+                    if os.path.exists(dvbapi):
+                        with open(dvbapi, "r") as f_in:
+                            existing = [l.strip() for l in f_in.readlines() if l.strip()]
+
+                    cleaned = [l for l in existing if not l.startswith("P: %s:" % caid) and srvid not in l]
+                    new_content = [rule] + cleaned
+                    with open(dvbapi, "w") as f_out:
+                        f_out.write("\n".join(new_content) + "\n")
+
+                self.locked_srvid.add(srvid)
+        except:
+            pass
+
+    def is_channel_crypted(self):
+        try:
+            service = self.session.nav.getCurrentService()
+            if service:
+                info = service.info()
+                if info:
+                    c1 = (info.getInfo(iServiceInformation.sIsCrypted) == 1)
+                    try:
+                        c2 = bool(info.getInfoFlag(iServiceInformation.sIsCrypted))
+                    except:
+                        c2 = False
+                    return c1 or c2
+        except:
+            pass
+        return False
+
+    def finish_recovery(self):
+        try:
+            if self.recovery_action == "zap":
+                from Screens.InfoBar import InfoBar
+                if InfoBar.instance and hasattr(InfoBar.instance, "zapUp"):
+                    InfoBar.instance.zapUp()
+                elif self.target_ref:
+                    self.session.nav.playService(self.target_ref)
+            elif self.recovery_action == "restart":
+                if self.target_ref:
+                    self.session.nav.playService(self.target_ref)
+        except:
+            pass
+
+        self.recovering = False
+        self.target_ref = None
+        self.recovery_action = None
+        self.error_streak = 0
+        self.channel_tune_time = time.time()
+
+    def is_ecm_error(self, data):
+        for t in ["timeout", "not found", "cannot decode", "no matching reader", "dropped", "network error"]:
+            if t in data:
+                return True
+        return False
+
+    def is_ecm_valid(self, data):
+        for v in ["found", "cache", "cw0:", "cw1:", "ecm time"]:
+            if v in data:
+                return True
+        return False
+
+    def monitor(self):
+        if not self.valid or not config.plugins.autozap_alamri.enabled.value:
+            return
+
+        if self.recovering:
+            return
+
+        try:
+            from Screens.Standby import inStandby
+            if inStandby:
+                self.retries = 0
+                return
+        except:
+            pass
+
+        try:
+            ref = self.session.nav.getCurrentlyPlayingServiceReference()
+            if not ref:
+                self.retries = 0
+                return
+
+            ref_str = ref.toString()
+            now = time.time()
+
+            if ref_str != self.last_ref:
+                self.last_ref = ref_str
+                self.retries = 0
+                self.error_streak = 0
+                self.cooldown_until = now + 5
+                self.channel_tune_time = now
+                self.is_current_sports = self.check_sports_identity()
+                self.apply_hardware_boost()
+                return
+
+            if now < self.cooldown_until:
+                return
+
+            ecm_path = "/tmp/ecm.info"
+            ecm_exists = os.path.exists(ecm_path)
+            is_crypted = self.is_channel_crypted()
+
+            if not is_crypted and not ecm_exists:
+                return
+
+            if ecm_exists:
+                self.lock_best_caid(ecm_path)
+
+            is_frozen = False
+            auto_sp = config.plugins.autozap_alamri.auto_sports.value and self.is_current_sports
+
+            if not ecm_exists:
+                initial_grace = 8 if auto_sp else 12
+                if (now - self.channel_tune_time) > initial_grace:
+                    is_frozen = True
+            else:
+                mtime = os.path.getmtime(ecm_path)
+                try:
+                    with open(ecm_path, "r") as f:
+                        data = f.read().lower()
+                except:
+                    data = ""
+
+                if self.is_ecm_error(data):
+                    self.error_streak += 1
+                    req_streak = 2 if auto_sp else 3
+                    if self.error_streak >= req_streak:
+                        is_frozen = True
+
+                elif self.is_ecm_valid(data):
+                    self.error_streak = 0
+                    max_safe_limit = 20 if auto_sp else 26
+                    if (now - mtime) > max_safe_limit:
+                        is_frozen = True
+
+                else:
+                    if (now - mtime) > 20:
+                        is_frozen = True
+
+            if is_frozen:
+                if not self.check_network():
+                    self.trigger_alert(_T("toast_net_err"), force_color="#ff3333")
+                    self.cooldown_until = now + 10
+                    return
+
+                max_r = int(config.plugins.autozap_alamri.max_retries.value)
+                if self.retries < max_r:
+                    self.retries += 1
+                    self.recovery_count += 1
+                    self.cooldown_until = now + 8
+                    self.recovering = True
+                    self.target_ref = ref
+
+                    mode = config.plugins.autozap_alamri.mode.value
+                    if mode == "zap":
+                        self.recovery_action = "zap"
+                        zapped = False
+                        try:
+                            from Screens.InfoBar import InfoBar
+                            if InfoBar.instance and hasattr(InfoBar.instance, "zapDown"):
+                                InfoBar.instance.zapDown()
+                                zapped = True
+                        except:
+                            zapped = False
+
+                        if zapped:
+                            msg = _T("toast_zap") % (self.retries, max_r)
+                            self.trigger_alert(msg)
+                            self.return_timer.start(2500, True)
+                        else:
+                            self.recovery_action = "restart"
+                            self.session.nav.stopService()
+                            self.session.nav.playService(ref)
+                            self.recovering = False
+                            self.channel_tune_time = now
+                    else:
+                        self.recovery_action = "restart"
+                        msg = _T("toast_restart") % (self.retries, max_r)
+                        self.trigger_alert(msg)
+                        self.session.nav.stopService()
+                        self.session.nav.playService(ref)
+                        self.recovering = False
+                        self.channel_tune_time = now
+                else:
+                    if config.plugins.autozap_alamri.cam_restart.value:
+                        self.retries = 0
+                        self.cooldown_until = now + 10
+                        self.restart_softcam()
+            else:
+                if ecm_exists and (now - os.path.getmtime(ecm_path)) < 5:
+                    self.retries = 0
+                    self.error_streak = 0
+        except:
+            pass
+
+core_instance = None
+
+def hook_infobar_keys():
+    try:
+        from Screens.InfoBarGenerics import InfoBarNumberZap
+        if hasattr(InfoBarNumberZap, "keyNumberGlobal"):
+            orig_num = InfoBarNumberZap.keyNumberGlobal
+            def zap_num(self, number):
+                try:
+                    if core_instance:
+                        core_instance.handle_key(str(number))
+                except:
+                    pass
+                return orig_num(self, number)
+            InfoBarNumberZap.keyNumberGlobal = zap_num
+    except:
+        pass
+
+    try:
+        from Screens.InfoBar import InfoBar
+        if hasattr(InfoBar, "keyZero"):
+            orig_zero = InfoBar.keyZero
+            def zap_zero(self):
+                try:
+                    if core_instance:
+                        core_instance.handle_key("0")
+                except:
+                    pass
+                return orig_zero(self)
+            InfoBar.keyZero = zap_zero
+    except:
+        pass
+
+def sessionstart(reason, session=None, **kwargs):
+    global core_instance
+    s = session if session is not None else kwargs.get("session")
+    if s is not None and reason == 0:
+        core_instance = AutoZapCore(s)
+        hook_infobar_keys()
+
+class AutoZapSetup(ConfigListScreen, Screen):
+    skin = """
+    <screen name="AutoZapSetup" position="center,center" size="840,620" title="AutoZap Recovery 1.0">
+        <widget name="config" position="20,20" size="800,420" scrollbarMode="showOnDemand" font="Regular;21" itemHeight="38" />
+        <widget source="status_info" render="Label" position="20,455" size="800,30" font="Regular;19" halign="center" valign="center" foregroundColor="#00ff00" transparent="1" />
+        <widget source="author_info" render="Label" position="20,490" size="800,25" font="Regular;17" halign="center" valign="center" foregroundColor="#f0a500" transparent="1" />
+        <widget source="key_red" render="Label" position="90,540" size="170,45" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#9f1313" transparent="0" />
+        <widget source="key_green" render="Label" position="335,540" size="170,45" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#0b7e13" transparent="0" />
+        <widget source="key_yellow" render="Label" position="580,540" size="170,45" zPosition="1" font="Regular;19" halign="center" valign="center" backgroundColor="#a08000" transparent="0" />
+    </screen>"""
+
+    def __init__(self, session):
+        Screen.__init__(self, session)
+        self.session = session
+        self.list = []
+        ConfigListScreen.__init__(self, self.list)
+        
+        self["status_info"] = StaticText("")
+        self["author_info"] = StaticText("AutoZap Recovery v1.0 - Developed by: Ahmad Alamri")
+        self["key_red"] = StaticText("")
+        self["key_green"] = StaticText("")
+        self["key_yellow"] = StaticText("")
+
+        self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
+            "green": self.save,
+            "red": self.cancel,
+            "yellow": self.manual_cam_restart,
+            "cancel": self.cancel,
+            "ok": self.save
+        }, -2)
+        
+        self.create_setup()
+
+    def create_setup(self):
+        self.setTitle(_T("title"))
+        self["key_red"].setText(_T("btn_cancel"))
+        self["key_green"].setText(_T("btn_save"))
+        self["key_yellow"].setText(_T("btn_cam"))
+
+        config.plugins.autozap_alamri.mode.setChoices([
+            ("restart", _T("mode_restart")),
+            ("zap", _T("mode_zap"))
+        ])
+        config.plugins.autozap_alamri.alert_type.setChoices([
+            ("circle", _T("type_circle")),
+            ("text", _T("type_text")),
+            ("silent", _T("type_silent"))
+        ])
+        config.plugins.autozap_alamri.alert_pos.setChoices([
+            ("top_right", _T("pos_tr")),
+            ("top_left", _T("pos_tl")),
+            ("bottom_right", _T("pos_br")),
+            ("bottom_left", _T("pos_bl")),
+            ("center", _T("pos_cnt"))
+        ])
+        config.plugins.autozap_alamri.alert_size.setChoices([
+            ("small", _T("sz_sm")),
+            ("medium", _T("sz_md")),
+            ("large", _T("sz_lg"))
+        ])
+        config.plugins.autozap_alamri.alert_color.setChoices([
+            ("#00ff00", _T("col_gr")),
+            ("#f0a500", _T("col_gd")),
+            ("#00bfff", _T("col_bl")),
+            ("#ff3333", _T("col_rd")),
+            ("#ffffff", _T("col_wh"))
+        ])
+
+        self.list = [
+            getConfigListEntry(_T("enabled"), config.plugins.autozap_alamri.enabled),
+            getConfigListEntry(_T("lang_option"), config.plugins.autozap_alamri.lang)
+        ]
+
+        if config.plugins.autozap_alamri.enabled.value:
+            ch_type = _T("channel_sports") if (core_instance and core_instance.is_current_sports) else _T("channel_regular")
+            rescues = core_instance.recovery_count if core_instance else 0
+            self["status_info"].setText(_T("status_active") % (ch_type, rescues))
+
+            self.list.append(getConfigListEntry(_T("kill_code"), config.plugins.autozap_alamri.kill_code))
+            self.list.append(getConfigListEntry(_T("auto_sports"), config.plugins.autozap_alamri.auto_sports))
+            self.list.append(getConfigListEntry(_T("boost_system"), config.plugins.autozap_alamri.boost_system))
+            self.list.append(getConfigListEntry(_T("check_net"), config.plugins.autozap_alamri.check_net))
+            self.list.append(getConfigListEntry(_T("cam_restart"), config.plugins.autozap_alamri.cam_restart))
+            self.list.append(getConfigListEntry(_T("lock_caid"), config.plugins.autozap_alamri.lock_caid))
+            self.list.append(getConfigListEntry(_T("mode"), config.plugins.autozap_alamri.mode))
+            self.list.append(getConfigListEntry(_T("timeout"), config.plugins.autozap_alamri.timeout))
+            self.list.append(getConfigListEntry(_T("max_retries"), config.plugins.autozap_alamri.max_retries))
+            self.list.append(getConfigListEntry(_T("alert_type"), config.plugins.autozap_alamri.alert_type))
+
+            atype = config.plugins.autozap_alamri.alert_type.value
+            if atype == "text":
+                self.list.append(getConfigListEntry(_T("alert_pos"), config.plugins.autozap_alamri.alert_pos))
+                self.list.append(getConfigListEntry(_T("alert_size"), config.plugins.autozap_alamri.alert_size))
+                self.list.append(getConfigListEntry(_T("alert_color"), config.plugins.autozap_alamri.alert_color))
+            elif atype == "circle":
+                self.list.append(getConfigListEntry(_T("alert_pos"), config.plugins.autozap_alamri.alert_pos))
+                self.list.append(getConfigListEntry(_T("circle_size"), config.plugins.autozap_alamri.circle_size))
+                self.list.append(getConfigListEntry(_T("alert_color"), config.plugins.autozap_alamri.alert_color))
+        else:
+            self["status_info"].setText(_T("status_disabled"))
+
+        self["config"].list = self.list
+        self["config"].setList(self.list)
+
+    def keyLeft(self):
+        ConfigListScreen.keyLeft(self)
+        self.create_setup()
+
+    def keyRight(self):
+        ConfigListScreen.keyRight(self)
+        self.create_setup()
+
+    def manual_cam_restart(self):
+        global core_instance
+        if core_instance:
+            core_instance.restart_softcam()
+            self["status_info"].setText(_T("cam_restarted"))
+
+    def save(self):
+        for x in self["config"].list:
+            x[1].save()
+        config.plugins.autozap_alamri.save()
+        global core_instance
+        if core_instance:
+            core_instance.apply_hardware_boost()
+            core_instance.start()
+        self.close()
+
+    def cancel(self):
+        for x in self["config"].list:
+            x[1].cancel()
+        self.close()
+
+def main(session, **kwargs):
+    session.open(AutoZapSetup)
+
+def Plugins(**kwargs):
+    return [
+        PluginDescriptor(where=PluginDescriptor.WHERE_SESSIONSTART, fnc=sessionstart),
+        PluginDescriptor(name="AutoZap Recovery 1.0", description="AutoZap Recovery | Developer: Ahmad Alamri", where=PluginDescriptor.WHERE_PLUGINMENU, icon=None, fnc=main)
+    ]
+PYEOF
+
+python -m compileall "$TARGET_DIR" > /dev/null 2>&1 || python3 -m compileall "$TARGET_DIR" > /dev/null 2>&1
 if [ -d "$TARGET_DIR/__pycache__" ]; then
     for f in "$TARGET_DIR/__pycache__"/*.pyc; do
         [ -e "$f" ] || continue
@@ -198,7 +877,6 @@ if [ -d "$TARGET_DIR/__pycache__" ]; then
     done
 fi
 
-# الإتلاف الفوري والنهائي لملفات السورس وقفل التصاريح
 rm -f "$TARGET_DIR"/*.py
 chmod 444 "$TARGET_DIR"/*.pyc 2>/dev/null
 chmod 444 "$TARGET_DIR/__pycache__"/*.pyc 2>/dev/null
@@ -208,4 +886,4 @@ echo " [SUCCESS] AutoZap Recovery 1.0 Installed Successfully!"
 echo " Developer: Ahmad Alamri                             "
 echo " Restarting Enigma2 GUI to activate services...      "
 echo "====================================================="
-killall -9 enigma2 2>/dev/null || true
+killall -9 enigma2
