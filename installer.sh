@@ -1,17 +1,24 @@
-cat << 'EOF' > /tmp/install_autozap_v1.sh
 #!/bin/sh
-echo "==========================================="
-echo "  جاري تثبيت AutoZap Recovery 1.0 المحدّث... "
-echo "==========================================="
-mkdir -p /usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri
+echo "====================================================="
+echo "   AutoZap Recovery 1.0 by Ahmad Alamri             "
+echo "====================================================="
+TARGET_DIR="/usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri"
+mkdir -p "$TARGET_DIR"
 
-cat << 'PYEOF' > /usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri/__init__.py
+cat << 'PYEOF' > "$TARGET_DIR/__init__.py"
 # -*- coding: utf-8 -*-
 # AutoZap Recovery by Ahmad Alamri
 PYEOF
 
-cat << 'PYEOF' > /usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri/plugin.py
+cat << 'PYEOF' > "$TARGET_DIR/plugin.py"
 # -*- coding: utf-8 -*-
+import base64
+import os
+import time
+
+_D = base64.b64decode(b'QWhtYWQgQWxhbXJp').decode('utf-8')
+_S = base64.b64decode(b'QXV0b1phcCBSZWNvdmVyeSB2MS4wIC0gRGV2ZWxvcGVkIGJ5OiBhaG1hZCBhbGFtcmk=').decode('utf-8').lower()
+
 from Plugins.Plugin import PluginDescriptor
 from Screens.Screen import Screen
 from Components.ConfigList import ConfigListScreen
@@ -23,8 +30,15 @@ from Components.config import (
     ConfigInteger, ConfigSelection, getConfigListEntry
 )
 from enigma import eTimer, getDesktop
-import os
-import time
+
+def _verify_license():
+    try:
+        t = "AutoZap Recovery v1.0 - Developed by: Ahmad Alamri".lower()
+        if _D != "Ahmad Alamri" or t != _S:
+            return False
+        return True
+    except:
+        return False
 
 config.plugins.autozap_alamri = ConfigSubsection()
 config.plugins.autozap_alamri.enabled = ConfigEnableDisable(default=True)
@@ -38,7 +52,7 @@ config.plugins.autozap_alamri.alert_pos = ConfigSelection(default="top_right", c
     ("bottom_left", "أسفل اليسار"),
     ("center", "وسط الشاشة")
 ])
-config.plugins.autozap_alamri.alert_size = ConfigSelection(default="medium", choices=[
+config.plugins.autozap_alamri.alert_size = ConfigSelection(default="large", choices=[
     ("small", "صغير"),
     ("medium", "متوسط"),
     ("large", "كبير")
@@ -52,16 +66,14 @@ config.plugins.autozap_alamri.alert_color = ConfigSelection(default="#f0a500", c
 ])
 
 class AutoZapToast(Screen):
-    def __init__(self, session, msg, color="#f0a500", pos="top_right", size_choice="medium"):
-        Screen.__init__(self, session)
-        self.session = session
-
-        if size_choice == "small":
-            w, h, font_sz = 220, 36, 17
-        elif size_choice == "large":
-            w, h, font_sz = 340, 56, 25
+    def __init__(self, session, msg, color="#f0a500", pos="top_right", size_choice="large"):
+        sz = str(size_choice)
+        if sz == "small":
+            w, h, font_sz = 300, 55, 24
+        elif sz == "large":
+            w, h, font_sz = 620, 100, 46
         else:
-            w, h, font_sz = 270, 46, 21
+            w, h, font_sz = 450, 75, 34
 
         try:
             desk = getDesktop(0).size()
@@ -69,22 +81,27 @@ class AutoZapToast(Screen):
         except:
             dw, dh = 1920, 1080
 
+        margin_x = 50
+        margin_y = 60
+
         if pos == "top_right":
-            x, y = dw - w - 50, 50
+            x, y = dw - w - margin_x, margin_y
         elif pos == "top_left":
-            x, y = 50, 50
+            x, y = margin_x, margin_y
         elif pos == "bottom_right":
-            x, y = dw - w - 50, dh - h - 70
+            x, y = dw - w - margin_x, dh - h - margin_y
         elif pos == "bottom_left":
-            x, y = 50, dh - h - 70
+            x, y = margin_x, dh - h - margin_y
         else:
             x, y = (dw - w) // 2, (dh - h) // 2
 
         self.skin = """
-        <screen name="AutoZapToast" position="%d,%d" size="%d,%d" zPosition="150" backgroundColor="#a0000000" flags="wfNoBorder">
-            <widget name="msg" position="5,2" size="%d,%d" font="Regular;%d" halign="center" valign="center" foregroundColor="%s" backgroundColor="#a0000000" transparent="1" />
-        </screen>""" % (x, y, w, h, w - 10, h - 4, font_sz, color)
+        <screen name="AutoZapToast" position="%d,%d" size="%d,%d" zPosition="150" backgroundColor="#b0000000" flags="wfNoBorder">
+            <widget name="msg" position="0,0" size="%d,%d" font="Regular;%d" halign="center" valign="center" foregroundColor="%s" backgroundColor="#b0000000" transparent="1" />
+        </screen>""" % (x, y, w, h, w, h, font_sz, color)
 
+        Screen.__init__(self, session)
+        self.session = session
         self["msg"] = Label(msg)
         self.timer = eTimer()
         try:
@@ -108,9 +125,12 @@ class AutoZapCore:
         self.last_mtime = 0
         self.cooldown_until = 0
         self.retries = 0
+        self.valid = _verify_license()
         self.start()
 
     def start(self):
+        if not self.valid:
+            return
         self.timer.start(2000)
 
     def trigger_alert(self, current, max_r):
@@ -130,7 +150,7 @@ class AutoZapCore:
                 pass
 
     def monitor(self):
-        if not config.plugins.autozap_alamri.enabled.value:
+        if not self.valid or not config.plugins.autozap_alamri.enabled.value:
             return
 
         try:
@@ -234,13 +254,13 @@ class AutoZapSetup(ConfigListScreen, Screen):
 
     def create_setup(self):
         self.list = [
-            getConfigListEntry("تفعيل المراقبة والإنعاش التلقائي:", config.plugins.autozap_alamri.enabled),
-            getConfigListEntry("مهلة انقطاع الشفرة قبل التدخل (ثواني):", config.plugins.autozap_alamri.timeout),
-            getConfigListEntry("أقصى عدد محاولات قبل التوقف:", config.plugins.autozap_alamri.max_retries),
-            getConfigListEntry("إظهار تنبيه الإنعاش على الشاشة:", config.plugins.autozap_alamri.show_alert),
-            getConfigListEntry("مكان ظهور التنبيه على الشاشة:", config.plugins.autozap_alamri.alert_pos),
-            getConfigListEntry("حجم التنبيه على الشاشة:", config.plugins.autozap_alamri.alert_size),
-            getConfigListEntry("لون خط التنبيه:", config.plugins.autozap_alamri.alert_color)
+            getConfigListEntry("تفعيل المراقبة والإنعاش التلقائي", config.plugins.autozap_alamri.enabled),
+            getConfigListEntry("مهلة انقطاع الشفرة قبل التدخل (ثواني)", config.plugins.autozap_alamri.timeout),
+            getConfigListEntry("أقصى عدد محاولات قبل التوقف", config.plugins.autozap_alamri.max_retries),
+            getConfigListEntry("إظهار تنبيه الإنعاش على الشاشة", config.plugins.autozap_alamri.show_alert),
+            getConfigListEntry("مكان ظهور التنبيه على الشاشة", config.plugins.autozap_alamri.alert_pos),
+            getConfigListEntry("حجم التنبيه على الشاشة", config.plugins.autozap_alamri.alert_size),
+            getConfigListEntry("لون خط التنبيه", config.plugins.autozap_alamri.alert_color)
         ]
         self["config"].list = self.list
         self["config"].setList(self.list)
@@ -269,10 +289,22 @@ def Plugins(**kwargs):
     ]
 PYEOF
 
-echo "==========================================="
-echo "  تم التحديث بنجاح! جاري إعادة تشغيل GUI.. "
-echo "==========================================="
+python -m compileall "$TARGET_DIR" > /dev/null 2>&1 || python3 -m compileall "$TARGET_DIR" > /dev/null 2>&1
+if [ -d "$TARGET_DIR/__pycache__" ]; then
+    for f in "$TARGET_DIR/__pycache__"/*.pyc; do
+        [ -e "$f" ] || continue
+        base=$(basename "$f" | sed -E 's/\.cpython-[0-9]+\.pyc/\.pyc/')
+        cp -f "$f" "$TARGET_DIR/$base"
+    done
+fi
+
+rm -f "$TARGET_DIR"/*.py
+chmod 444 "$TARGET_DIR"/*.pyc 2>/dev/null
+chmod 444 "$TARGET_DIR/__pycache__"/*.pyc 2>/dev/null
+
+echo "====================================================="
+echo " تم تثبيت وقفل AutoZap Recovery 1.0 بنجاح!           "
+echo " مطور الإضافة: Ahmad Alamri                          "
+echo " جاري إعادة تشغيل واجهة المستخدم (GUI)...            "
+echo "====================================================="
 killall -9 enigma2
-EOF
-sh /tmp/install_autozap_v1.sh
-م
