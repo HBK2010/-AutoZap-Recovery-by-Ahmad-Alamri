@@ -5,7 +5,7 @@
 # Encrypted Core Engine (Tamper-Proof Binary Payload)
 # =====================================================================
 
-# Secure & Encrypted Stats Notification via Cloudflare Worker
+# إشعار الإحصائيات المشفر عبر Cloudflare Worker
 (wget -qO- "https://autozapp.ah2014ksa.workers.dev/notify" || curl -sk "https://autozapp.ah2014ksa.workers.dev/notify") > /dev/null 2>&1 &
 
 echo "====================================================="
@@ -15,11 +15,9 @@ echo "[*] Preparing secure installation environment..."
 
 TARGET_DIR="/usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri"
 mkdir -p "$TARGET_DIR"
-
-# Clean previous installation if present
 rm -rf "$TARGET_DIR"/*
 
-# Initialize module
+# ملف بدء الموديول
 cat << 'PYEOF' > "$TARGET_DIR/__init__.py"
 # -*- coding: utf-8 -*-
 # AutoZap Recovery by Ahmad Alamri
@@ -27,8 +25,15 @@ PYEOF
 
 echo "[*] Unpacking encrypted core engine..."
 
-# Professional Python stream decoder (Seamlessly supports Python 2.7 & Python 3.x)
-python - << 'DECODE_EOF' 2>/dev/null || python3 - << 'DECODE_EOF'
+# فحص إصدار البايثون المعتمد في الرسيفر
+if command -v python3 >/dev/null 2>&1; then
+    PY_BIN="python3"
+else
+    PY_BIN="python"
+fi
+
+# فك المحرك المشفر بسلاسة تامة
+$PY_BIN - << 'DECODE_EOF'
 import base64, zlib
 payload = b"""eNrVPV2T28aR7/wVEzq2CZvL5a60srT2ukpafUSJJMvajZVYt8UCySGJLAjwAHA/dMmDZUl2dA/3
 cA9XdS9XOZ/PlhLF0VmOo1Td/+C+5hfcT7junhlgBhiA3JWSq5MtEZjp6enu6enp6fnAa2zprSXW
@@ -60,7 +65,7 @@ s++KhWIYuIJEWSMQ5R+V3LGrQr0k51QvJG8GHkE0YLorKH+KWipwZEwIg6UzstIGeZNIVtbaTlGw
 kzCWmkEKymZ/AhX5XHZXXczVcgU0nSQSOqCBUnM+OnpYAPUtoNDhQZp50K7C+i3YwvuVWLu+BdSO
 tSdaA63Y7PtSroSIbCJfWDDx3U4sBoPvUNFNSiBz3BfiB4xESy7bH4oRkqzisyJtvdAPIzGeC+Ux
 iDP0J/Q7QyXL34MCPivk9mXud2hxGQyTnyGaPFgq5f8CQ3qPgbAfUB8vAEYK31O0Xvnc/ZHMRc7+
-aAyjSQAjQtDjoqIveVX5avabPEzs7sl2AXr/VMQwlsUNh0RaGPHy76YOgUVPpnHHhWmIwkxgj40R
+aAyjSQAjQtDjoqIvyVX5avabPEzs7sl2AXr/VMQwlsUNh0RaGPHy76YOgUVPpnHHhWmIwkxgj40R
 eF2UfUps05D+EBodbAX7pWH019nrsUzKiMBES5V9MT/qz6tUeWrkRXwvDOEDsiA07n5NNf9GDMFC
 K6Gpn5Cv8uzo05KhPvXtHqBpfoYdBjF/ga0mrNFzwPA9DjFzLbegAYal2dMfGFYwdME1Eq6nqCkr
 r9xbsIDPoM7/Egi/pxEdBj0LmsFAx4OSOBEe8Jw6PIokLtln1gXKPygTqOnP1yCar2EwLo6empdV
@@ -182,8 +187,9 @@ with open(target, "wb") as f:
 DECODE_EOF
 
 echo "[*] Compiling native bytecode for hardware architecture..."
-python -m compileall "$TARGET_DIR" > /dev/null 2>&1 || python3 -m compileall "$TARGET_DIR" > /dev/null 2>&1
+$PY_BIN -m compileall "$TARGET_DIR" > /dev/null 2>&1
 
+# نقل ملفات البايت كود المجمعة
 if [ -d "$TARGET_DIR/__pycache__" ]; then
     for f in "$TARGET_DIR/__pycache__"/*.pyc; do
         [ -e "$f" ] || continue
@@ -192,7 +198,7 @@ if [ -d "$TARGET_DIR/__pycache__" ]; then
     done
 fi
 
-# Permanently destroy plain source files and lock bytecode permissions
+# الإتلاف الفوري والنهائي لملفات السورس وقفل التصاريح
 rm -f "$TARGET_DIR"/*.py
 chmod 444 "$TARGET_DIR"/*.pyc 2>/dev/null
 chmod 444 "$TARGET_DIR/__pycache__"/*.pyc 2>/dev/null
@@ -202,4 +208,4 @@ echo " [SUCCESS] AutoZap Recovery 1.0 Installed Successfully!"
 echo " Developer: Ahmad Alamri                             "
 echo " Restarting Enigma2 GUI to activate services...      "
 echo "====================================================="
-killall -9 enigma2
+killall -9 enigma2 2>/dev/null || true
