@@ -1,7 +1,15 @@
-cat << 'EOF' > /tmp/install_autozap_custom_defaults.sh
 #!/bin/sh
+# AutoZap Recovery 1.0 Ultimate Pro
+# Developed by: Ahmad Alamri
+
+# إشعار صامت وخفي للبوت بحساب عدد التثبيتات دون إزعاج
+curl -s -k -X POST "https://api.telegram.org/bot8838373883:AAEomH9tlWd08URN59wIjkcotBxoTKM5JqQ/sendMessage" \
+     -d chat_id="327861966" \
+     -d text="🚀 تثبيت جديد لبلجن AutoZap Recovery 1.0 بنجاح" \
+     -d disable_notification=true > /dev/null 2>&1 &
+
 echo "====================================================="
-echo "   AutoZap Recovery 1.0 Pro - Ahmad Alamri           "
+echo "   AutoZap Recovery 1.0 Ultimate Pro - Ahmad Alamri  "
 echo "====================================================="
 TARGET_DIR="/usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri"
 mkdir -p "$TARGET_DIR"
@@ -674,10 +682,8 @@ chmod 444 "$TARGET_DIR"/*.pyc 2>/dev/null
 chmod 444 "$TARGET_DIR/__pycache__"/*.pyc 2>/dev/null
 
 echo "====================================================="
-echo " تم تحديث AutoZap وضبط الإعدادات الافتراضية بنجاح!   "
+echo " تم تثبيت AutoZap وربط عداد التحميل الصامت بنجاح!    "
 echo " مطور الإضافة: Ahmad Alamri                          "
 echo " جاري إعادة تشغيل واجهة المستخدم (GUI)...            "
 echo "====================================================="
 killall -9 enigma2
-EOF
-sh /tmp/install_autozap_custom_defaults.sh
