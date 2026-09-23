@@ -1,20 +1,10 @@
+cat << 'EOF' > /tmp/install_autozap_custom_defaults.sh
 #!/bin/sh
-# =====================================================================
-# AutoZap Recovery 1.0 Ultimate Pro (AI Smart Sports & Zero False-Positive)
-# Developed exclusively by: Ahmad Alamri
-# =====================================================================
-
-# إشعار الإحصائيات المشفر عبر Cloudflare Worker
-(wget -qO- "https://autozapp.ah2014ksa.workers.dev/notify" || curl -sk "https://autozapp.ah2014ksa.workers.dev/notify") > /dev/null 2>&1 &
-
 echo "====================================================="
-echo "   AutoZap Recovery 1.0 Ultimate Pro - Ahmad Alamri  "
+echo "   AutoZap Recovery 1.0 Pro - Ahmad Alamri           "
 echo "====================================================="
-echo "[*] Preparing installation environment..."
-
 TARGET_DIR="/usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri"
 mkdir -p "$TARGET_DIR"
-rm -rf "$TARGET_DIR"/*
 
 cat << 'PYEOF' > "$TARGET_DIR/__init__.py"
 # -*- coding: utf-8 -*-
@@ -29,8 +19,9 @@ import re
 import socket
 import time
 
-_D = base64.b64decode(b'QWhtYWQgQWxhbXJp').decode('utf-8')
-_S = base64.b64decode(b'QXV0b1phcCBSZWNvdmVyeSB2MS4wIC0gRGV2ZWxvcGVkIGJ5OiBhaG1hZCBhbGFtcmk=').decode('utf-8').lower()
+# تعديل التوافقية لتعمل مع Python 2 و Python 3 معاً بدون أخطاء تشفير
+_D = base64.b64decode('QWhtYWQgQWxhbXJp').decode('utf-8', errors='ignore')
+_S = base64.b64decode('QXV0b1phcCBSZWNvdmVyeSB2MS4wIC0gRGV2ZWxvcGVkIGJ5OiBhaG1hZCBhbGFtcmk=').decode('utf-8', errors='ignore').lower()
 
 from Plugins.Plugin import PluginDescriptor
 from Screens.Screen import Screen
@@ -38,7 +29,6 @@ from Components.ConfigList import ConfigListScreen
 from Components.ActionMap import ActionMap
 from Components.Sources.StaticText import StaticText
 from Components.Label import Label
-from Components.Language import language
 from Components.config import (
     config, ConfigSubsection, ConfigEnableDisable, 
     ConfigInteger, ConfigSelection, ConfigText, getConfigListEntry
@@ -54,178 +44,45 @@ def _verify_license():
     except:
         return False
 
-SPORTS_KEYWORDS = [
-    "sport", "arena", "bein", "ssc", "espn", "canal+ sport", "dazn",
-    "eurosport", "polsat sport", "nova sport", "match", "eleven",
-    "football", "alkass", "premier", "ziggo", "sky sport", "spiler",
-    "setanta", "super sport", "digi sport", "sportklub", "tnt sport",
-    "la liga", "laliga", "champions", "bundesliga", "serie a", "motogp",
-    "formula", "f1", "wwe", "fight", "nba", "live"
-]
-
-STRINGS = {
-    "ar": {
-        "title": "AutoZap Recovery 1.0 - لوحة التحكم الذكية",
-        "lang_option": "لغة البلجن / Language",
-        "enabled": "تفعيل المراقبة والإنعاش التلقائي",
-        "kill_code": "كود الإيقاف والتشغيل السريع بالريموت",
-        "auto_sports": "التعرف الذكي التلقائي على قنوات المباريات والرياضة",
-        "boost_system": "رفع أولوية معالجة الأوسكام والتيونر في النظام",
-        "check_net": "فحص اتصال الإنترنت قبل التقليب",
-        "cam_restart": "إعادة تشغيل الأوسكام تلقائياً عند استمرار الفشل",
-        "lock_caid": "تثبيت أسرع شفرة ومنع التنقل العشوائي للكايد",
-        "mode": "طريقة الإنعاش عند تجمد القناة",
-        "mode_restart": "إعادة تشغيل القناة مكانها دون تقليب",
-        "mode_zap": "تقليب مرئي لقناة مجاورة والعودة",
-        "timeout": "مهلة انقطاع البث قبل التدخل (بالثواني)",
-        "max_retries": "أقصى عدد محاولات قبل إعادة تشغيل الإيمو",
-        "alert_type": "شكل تنبيه الإنعاش على الشاشة",
-        "type_circle": "دائرة ممتلئة (نقطة)",
-        "type_text": "إشعار كتابي (نص)",
-        "type_silent": "الوضع الصامت (بدون تنبيه)",
-        "circle_size": "حجم الدائرة الممتلئة (10 إلى 150)",
-        "alert_pos": "مكان ظهور التنبيه على الشاشة",
-        "pos_tr": "أعلى اليمين",
-        "pos_tl": "أعلى اليسار",
-        "pos_br": "أسفل اليمين",
-        "pos_bl": "أسفل اليسار",
-        "pos_cnt": "وسط الشاشة",
-        "alert_size": "حجم التنبيه على الشاشة",
-        "sz_sm": "صغير",
-        "sz_md": "متوسط",
-        "sz_lg": "كبير",
-        "alert_color": "لون التنبيه",
-        "col_gr": "أخضر",
-        "col_gd": "أصفر ذهبي",
-        "col_bl": "أزرق سماوي",
-        "col_rd": "أحمر",
-        "col_wh": "أبيض",
-        "btn_cancel": "إلغاء",
-        "btn_save": "حفظ",
-        "btn_cam": "إنعاش الإيمو الآن",
-        "status_active": "حالة النظام: الحماية نشطة | القناة: %s | الإنعاش: %s",
-        "status_disabled": "حالة النظام: البلجن معطل تماماً بناءً على اختيارك",
-        "cam_restarted": "تم إرسال أمر تنشيط وإعادة تشغيل الإيمو بنجاح!",
-        "toast_on": "تم تشغيل AutoZap برمز الطوارئ",
-        "toast_off": "تم تعطيل AutoZap برمز الطوارئ",
-        "toast_net_err": "تنبيه: تعذر الإنعاش بسبب انقطاع الإنترنت",
-        "toast_cam_ok": "تم إنعاش الأوسكام تلقائياً بنجاح",
-        "toast_zap": "إنعاش القناة: تقليب مؤقت (%s/%s)",
-        "toast_restart": "إنعاش القناة بنفس مكانها (%s/%s)",
-        "channel_sports": "بث رياضي / كورة ⚽",
-        "channel_regular": "قناة عامة 📺"
-    },
-    "en": {
-        "title": "AutoZap Recovery 1.0 - Smart Control Panel",
-        "lang_option": "Plugin Language / اللغة",
-        "enabled": "Enable Auto Monitoring & Recovery",
-        "kill_code": "Quick Remote Toggle Code",
-        "auto_sports": "AI Auto-Detect Sports & Match Channels",
-        "boost_system": "Elevate Softcam & Tuner System Priority",
-        "check_net": "Verify Internet Connection Before Zap",
-        "cam_restart": "Auto Restart Softcam on Persistent Failure",
-        "lock_caid": "Lock Fastest ECM & Prevent CAID Hopping",
-        "mode": "Recovery Method on Freeze",
-        "mode_restart": "Restart channel in place (No zap)",
-        "mode_zap": "Zap to adjacent channel and return",
-        "timeout": "ECM Loss Timeout Before Action (seconds)",
-        "max_retries": "Max Retries Before Softcam Restart",
-        "alert_type": "On-Screen Alert Notification Style",
-        "type_circle": "Filled Circle (Dot)",
-        "type_text": "Text Notification Banner",
-        "type_silent": "Silent Mode (No Notification)",
-        "circle_size": "Filled Circle Size (10 to 150)",
-        "alert_pos": "Notification Screen Position",
-        "pos_tr": "Top Right",
-        "pos_tl": "Top Left",
-        "pos_br": "Bottom Right",
-        "pos_bl": "Bottom Left",
-        "pos_cnt": "Center Screen",
-        "alert_size": "Notification Banner Size",
-        "sz_sm": "Small",
-        "sz_md": "Medium",
-        "sz_lg": "Large",
-        "alert_color": "Notification Color",
-        "col_gr": "Green",
-        "col_gd": "Golden Yellow",
-        "col_bl": "Sky Blue",
-        "col_rd": "Red",
-        "col_wh": "White",
-        "btn_cancel": "Cancel",
-        "btn_save": "Save",
-        "btn_cam": "Restart Cam Now",
-        "status_active": "System Status: Guard Active | Channel: %s | Rescues: %s",
-        "status_disabled": "System Status: Plugin is completely Disabled",
-        "cam_restarted": "Softcam restart signal executed successfully!",
-        "toast_on": "AutoZap Activated via Emergency Code",
-        "toast_off": "AutoZap Disabled via Emergency Code",
-        "toast_net_err": "Alert: Recovery skipped due to No Internet",
-        "toast_cam_ok": "Softcam restarted automatically successfully",
-        "toast_zap": "Channel Recovery: Quick Zap (%s/%s)",
-        "toast_restart": "Channel Recovery: In-Place Restart (%s/%s)",
-        "channel_sports": "Sports / Match ⚽",
-        "channel_regular": "Standard Channel 📺"
-    }
-}
-
 config.plugins.autozap_alamri = ConfigSubsection()
-config.plugins.autozap_alamri.lang = ConfigSelection(default="auto", choices=[
-    ("auto", "تلقائي حسب لغة الجهاز (System Default)"),
-    ("ar", "العربية (Arabic)"),
-    ("en", "English")
-])
 config.plugins.autozap_alamri.enabled = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.kill_code = ConfigText(default="00", fixed_size=False)
-config.plugins.autozap_alamri.auto_sports = ConfigEnableDisable(default=True)
+config.plugins.autozap_alamri.sports_mode = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.boost_system = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.check_net = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.cam_restart = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.lock_caid = ConfigEnableDisable(default=True)
 config.plugins.autozap_alamri.mode = ConfigSelection(default="restart", choices=[
-    ("restart", "restart"),
-    ("zap", "zap")
+    ("restart", "إعادة تشغيل القناة مكانها دون تقليب"),
+    ("zap", "تقليب مرئي لقناة مجاورة والعودة")
 ])
-config.plugins.autozap_alamri.timeout = ConfigInteger(default=15, limits=(5, 500))
+config.plugins.autozap_alamri.timeout = ConfigInteger(default=3, limits=(1, 500))
 config.plugins.autozap_alamri.max_retries = ConfigInteger(default=10, limits=(1, 500))
 config.plugins.autozap_alamri.alert_type = ConfigSelection(default="circle", choices=[
-    ("circle", "circle"),
-    ("text", "text"),
-    ("silent", "silent")
+    ("circle", "دائرة ممتلئة (نقطة)"),
+    ("text", "إشعار كتابي (نص)"),
+    ("silent", "الوضع الصامت (بدون تنبيه)")
 ])
 config.plugins.autozap_alamri.circle_size = ConfigInteger(default=40, limits=(10, 150))
 config.plugins.autozap_alamri.alert_pos = ConfigSelection(default="top_right", choices=[
-    ("top_right", "top_right"),
-    ("top_left", "top_left"),
-    ("bottom_right", "bottom_right"),
-    ("bottom_left", "bottom_left"),
-    ("center", "center")
+    ("top_right", "أعلى اليمين"),
+    ("top_left", "أعلى اليسار"),
+    ("bottom_right", "أسفل اليمين"),
+    ("bottom_left", "أسفل اليسار"),
+    ("center", "وسط الشاشة")
 ])
 config.plugins.autozap_alamri.alert_size = ConfigSelection(default="large", choices=[
-    ("small", "small"),
-    ("medium", "medium"),
-    ("large", "large")
+    ("small", "صغير"),
+    ("medium", "متوسط"),
+    ("large", "كبير")
 ])
 config.plugins.autozap_alamri.alert_color = ConfigSelection(default="#00ff00", choices=[
-    ("#00ff00", "green"),
-    ("#f0a500", "gold"),
-    ("#00bfff", "blue"),
-    ("#ff3333", "red"),
-    ("#ffffff", "white")
+    ("#00ff00", "أخضر"),
+    ("#f0a500", "أصفر ذهبي"),
+    ("#00bfff", "أزرق سماوي"),
+    ("#ff3333", "أحمر"),
+    ("#ffffff", "أبيض")
 ])
-
-def get_current_lang():
-    opt = config.plugins.autozap_alamri.lang.value
-    if opt in ("ar", "en"):
-        return opt
-    try:
-        sys_l = language.getLanguage()[:2].lower()
-        return "ar" if sys_l == "ar" else "en"
-    except:
-        return "ar"
-
-def _T(key):
-    l = get_current_lang()
-    return STRINGS.get(l, STRINGS["ar"]).get(key, key)
 
 class AutoZapToast(Screen):
     def __init__(self, session, msg, color="#00ff00", pos="top_right", is_circle=False, circle_sz=40, size_choice="large"):
@@ -235,22 +92,24 @@ class AutoZapToast(Screen):
         except:
             dw, dh = 1920, 1080
 
-        margin_x, margin_y = 50, 60
+        margin_x = 50
+        margin_y = 60
 
         if is_circle:
             cs = int(circle_sz)
-            w, h = cs + 20, cs + 20
+            w = cs + 20
+            h = cs + 20
             font_sz = cs
             display_text = "●"
             bg_color = "transparent"
         else:
             sz = str(size_choice)
             if sz == "small":
-                w, h, font_sz = 360, 55, 24
+                w, h, font_sz = 340, 55, 24
             elif sz == "large":
-                w, h, font_sz = 700, 100, 42
+                w, h, font_sz = 680, 100, 42
             else:
-                w, h, font_sz = 520, 75, 32
+                w, h, font_sz = 500, 75, 32
             display_text = msg
             bg_color = "#b0000000"
 
@@ -310,43 +169,14 @@ class AutoZapCore:
         self.key_buffer = ""
         self.last_key_time = 0
         self.retries = 0
-        self.error_streak = 0
-        self.is_current_sports = False
         self.valid = _verify_license()
         self.start()
 
     def start(self):
         if not self.valid:
             return
-        if not config.plugins.autozap_alamri.enabled.value:
-            self.timer.stop()
-            return
         self.apply_hardware_boost()
         self.timer.start(2000)
-
-    def check_sports_identity(self):
-        try:
-            service = self.session.nav.getCurrentService()
-            if not service:
-                return False
-            info = service.info()
-            if not info:
-                return False
-
-            ch_name = info.getName().lower()
-            for kw in SPORTS_KEYWORDS:
-                if kw in ch_name:
-                    return True
-
-            event = info.getEvent(0)
-            if event:
-                ev_name = event.getEventName().lower()
-                for kw in SPORTS_KEYWORDS:
-                    if kw in ev_name:
-                        return True
-        except:
-            pass
-        return False
 
     def handle_key(self, digit):
         kill_code = str(config.plugins.autozap_alamri.kill_code.value).strip()
@@ -374,13 +204,12 @@ class AutoZapCore:
         self.recovering = False
 
         if new_val:
-            msg = _T("toast_on")
+            msg = "تم تشغيل AutoZap برمز الطوارئ"
             col = "#00ff00"
             self.start()
         else:
-            msg = _T("toast_off")
+            msg = "تم تعطيل AutoZap برمز الطوارئ"
             col = "#ff3333"
-            self.timer.stop()
 
         try:
             self.session.open(AutoZapToast, msg, col, "center", False, 40, "large")
@@ -396,7 +225,8 @@ class AutoZapCore:
                 "ionice -c 1 -n 0 -p $(pidof oscam ncam 2>/dev/null) >/dev/null 2>&1; "
                 "sysctl -w net.core.rmem_max=8388608 >/dev/null 2>&1; "
                 "sysctl -w net.core.wmem_max=8388608 >/dev/null 2>&1; "
-                "sysctl -w net.ipv4.tcp_fastopen=3 >/dev/null 2>&1"
+                "sysctl -w net.ipv4.tcp_fastopen=3 >/dev/null 2>&1; "
+                "echo 1 > /proc/sys/vm/drop_caches 2>/dev/null"
             )
             os.system(cmd + " &")
         except:
@@ -419,10 +249,10 @@ class AutoZapCore:
             cmd = (
                 "killall -9 oscam ncam 2>/dev/null; sleep 1; "
                 "for bin in /usr/bin/oscam* /usr/bin/ncam*; do "
-                'if [ -x "$bin" ]; then "$bin" -b & break; fi; done'
+                "if [ -x \"$bin\" ]; then \"$bin\" -b & break; fi; done"
             )
             os.system(cmd + " &")
-            self.trigger_alert(_T("toast_cam_ok"))
+            self.trigger_alert("تم إنعاش الأوسكام تلقائياً بنجاح")
         except:
             pass
 
@@ -499,6 +329,7 @@ class AutoZapCore:
                     with open(dvbapi, "w") as f_out:
                         f_out.write("\n".join(new_content) + "\n")
 
+                os.system("killall -1 oscam ncam 2>/dev/null &")
                 self.locked_srvid.add(srvid)
         except:
             pass
@@ -536,20 +367,28 @@ class AutoZapCore:
         self.recovering = False
         self.target_ref = None
         self.recovery_action = None
-        self.error_streak = 0
         self.channel_tune_time = time.time()
 
-    def is_ecm_error(self, data):
-        for t in ["timeout", "not found", "cannot decode", "no matching reader", "dropped", "network error"]:
-            if t in data:
-                return True
-        return False
+    def check_preemptive_boost(self, ecm_path, now):
+        if not config.plugins.autozap_alamri.boost_system.value:
+            return
+        if (now - self.last_boost_time) < 15:
+            return
 
-    def is_ecm_valid(self, data):
-        for v in ["found", "cache", "cw0:", "cw1:", "ecm time"]:
-            if v in data:
-                return True
-        return False
+        try:
+            if os.path.exists(ecm_path):
+                with open(ecm_path, "r") as f:
+                    content = f.read().lower()
+                    m = re.search(r'([0-9\.]+)\s*(ms|s)', content)
+                    if m:
+                        val = float(m.group(1))
+                        unit = m.group(2)
+                        t_ms = val * 1000 if unit == "s" else val
+                        if t_ms > 1300:
+                            self.apply_hardware_boost()
+                            self.last_boost_time = now
+        except:
+            pass
 
     def monitor(self):
         if not self.valid or not config.plugins.autozap_alamri.enabled.value:
@@ -578,10 +417,8 @@ class AutoZapCore:
             if ref_str != self.last_ref:
                 self.last_ref = ref_str
                 self.retries = 0
-                self.error_streak = 0
-                self.cooldown_until = now + 5
+                self.cooldown_until = now + 4
                 self.channel_tune_time = now
-                self.is_current_sports = self.check_sports_identity()
                 self.apply_hardware_boost()
                 return
 
@@ -598,40 +435,33 @@ class AutoZapCore:
             if ecm_exists:
                 self.lock_best_caid(ecm_path)
 
+            self.check_preemptive_boost(ecm_path, now)
+
+            timeout_limit = 3 if config.plugins.autozap_alamri.sports_mode.value else int(config.plugins.autozap_alamri.timeout.value)
             is_frozen = False
-            auto_sp = config.plugins.autozap_alamri.auto_sports.value and self.is_current_sports
 
             if not ecm_exists:
-                initial_grace = 8 if auto_sp else 12
-                if (now - self.channel_tune_time) > initial_grace:
+                if (now - self.channel_tune_time) > timeout_limit:
                     is_frozen = True
             else:
                 mtime = os.path.getmtime(ecm_path)
-                try:
-                    with open(ecm_path, "r") as f:
-                        data = f.read().lower()
-                except:
-                    data = ""
-
-                if self.is_ecm_error(data):
-                    self.error_streak += 1
-                    req_streak = 2 if auto_sp else 3
-                    if self.error_streak >= req_streak:
+                if mtime < self.channel_tune_time:
+                    if (now - self.channel_tune_time) > timeout_limit:
                         is_frozen = True
-
-                elif self.is_ecm_valid(data):
-                    self.error_streak = 0
-                    max_safe_limit = 20 if auto_sp else 26
-                    if (now - mtime) > max_safe_limit:
-                        is_frozen = True
-
+                elif (now - mtime) > timeout_limit:
+                    is_frozen = True
                 else:
-                    if (now - mtime) > 20:
-                        is_frozen = True
+                    try:
+                        with open(ecm_path, "r") as f:
+                            data = f.read().lower()
+                            if "timeout" in data or "not found" in data or "cannot decode" in data:
+                                is_frozen = True
+                    except:
+                        pass
 
             if is_frozen:
                 if not self.check_network():
-                    self.trigger_alert(_T("toast_net_err"), force_color="#ff3333")
+                    self.trigger_alert("تنبيه: تعذر الإنعاش بسبب انقطاع الإنترنت", force_color="#ff3333")
                     self.cooldown_until = now + 10
                     return
 
@@ -639,9 +469,15 @@ class AutoZapCore:
                 if self.retries < max_r:
                     self.retries += 1
                     self.recovery_count += 1
-                    self.cooldown_until = now + 8
+                    self.cooldown_until = now + 7
                     self.recovering = True
                     self.target_ref = ref
+
+                    try:
+                        if os.path.exists(ecm_path):
+                            os.remove(ecm_path)
+                    except:
+                        pass
 
                     mode = config.plugins.autozap_alamri.mode.value
                     if mode == "zap":
@@ -656,7 +492,7 @@ class AutoZapCore:
                             zapped = False
 
                         if zapped:
-                            msg = _T("toast_zap") % (self.retries, max_r)
+                            msg = "إنعاش القناة: تقليب مؤقت (%s/%s)" % (self.retries, max_r)
                             self.trigger_alert(msg)
                             self.return_timer.start(2500, True)
                         else:
@@ -667,7 +503,7 @@ class AutoZapCore:
                             self.channel_tune_time = now
                     else:
                         self.recovery_action = "restart"
-                        msg = _T("toast_restart") % (self.retries, max_r)
+                        msg = "إنعاش القناة بنفس مكانها (%s/%s)" % (self.retries, max_r)
                         self.trigger_alert(msg)
                         self.session.nav.stopService()
                         self.session.nav.playService(ref)
@@ -676,12 +512,11 @@ class AutoZapCore:
                 else:
                     if config.plugins.autozap_alamri.cam_restart.value:
                         self.retries = 0
-                        self.cooldown_until = now + 10
+                        self.cooldown_until = now + 8
                         self.restart_softcam()
             else:
-                if ecm_exists and (now - os.path.getmtime(ecm_path)) < 5:
+                if ecm_exists and (now - os.path.getmtime(ecm_path)) < 4:
                     self.retries = 0
-                    self.error_streak = 0
         except:
             pass
 
@@ -727,13 +562,13 @@ def sessionstart(reason, session=None, **kwargs):
 
 class AutoZapSetup(ConfigListScreen, Screen):
     skin = """
-    <screen name="AutoZapSetup" position="center,center" size="840,620" title="AutoZap Recovery 1.0">
-        <widget name="config" position="20,20" size="800,420" scrollbarMode="showOnDemand" font="Regular;21" itemHeight="38" />
-        <widget source="status_info" render="Label" position="20,455" size="800,30" font="Regular;19" halign="center" valign="center" foregroundColor="#00ff00" transparent="1" />
-        <widget source="author_info" render="Label" position="20,490" size="800,25" font="Regular;17" halign="center" valign="center" foregroundColor="#f0a500" transparent="1" />
-        <widget source="key_red" render="Label" position="90,540" size="170,45" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#9f1313" transparent="0" />
-        <widget source="key_green" render="Label" position="335,540" size="170,45" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#0b7e13" transparent="0" />
-        <widget source="key_yellow" render="Label" position="580,540" size="170,45" zPosition="1" font="Regular;19" halign="center" valign="center" backgroundColor="#a08000" transparent="0" />
+    <screen name="AutoZapSetup" position="center,center" size="820,620" title="AutoZap Recovery 1.0 - لوحة التحكم الاحترافية">
+        <widget name="config" position="20,20" size="780,420" scrollbarMode="showOnDemand" font="Regular;21" itemHeight="38" />
+        <widget source="status_info" render="Label" position="20,455" size="780,30" font="Regular;19" halign="center" valign="center" foregroundColor="#00ff00" transparent="1" />
+        <widget source="author_info" render="Label" position="20,490" size="780,25" font="Regular;17" halign="center" valign="center" foregroundColor="#f0a500" transparent="1" />
+        <widget source="key_red" render="Label" position="90,540" size="160,45" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#9f1313" transparent="0" />
+        <widget source="key_green" render="Label" position="330,540" size="160,45" zPosition="1" font="Regular;20" halign="center" valign="center" backgroundColor="#0b7e13" transparent="0" />
+        <widget source="key_yellow" render="Label" position="570,540" size="160,45" zPosition="1" font="Regular;19" halign="center" valign="center" backgroundColor="#a08000" transparent="0" />
     </screen>"""
 
     def __init__(self, session):
@@ -742,11 +577,12 @@ class AutoZapSetup(ConfigListScreen, Screen):
         self.list = []
         ConfigListScreen.__init__(self, self.list)
         
-        self["status_info"] = StaticText("")
+        rescues = core_instance.recovery_count if core_instance else 0
+        self["status_info"] = StaticText("حالة النظام: التيونر والأوسكام في القمة (Turbo Boost) | عمليات الإنعاش اليوم: %s" % rescues)
         self["author_info"] = StaticText("AutoZap Recovery v1.0 - Developed by: Ahmad Alamri")
-        self["key_red"] = StaticText("")
-        self["key_green"] = StaticText("")
-        self["key_yellow"] = StaticText("")
+        self["key_red"] = StaticText("إلغاء")
+        self["key_green"] = StaticText("حفظ")
+        self["key_yellow"] = StaticText("إنعاش الإيمو الآن")
 
         self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
             "green": self.save,
@@ -759,72 +595,29 @@ class AutoZapSetup(ConfigListScreen, Screen):
         self.create_setup()
 
     def create_setup(self):
-        self.setTitle(_T("title"))
-        self["key_red"].setText(_T("btn_cancel"))
-        self["key_green"].setText(_T("btn_save"))
-        self["key_yellow"].setText(_T("btn_cam"))
-
-        config.plugins.autozap_alamri.mode.setChoices([
-            ("restart", _T("mode_restart")),
-            ("zap", _T("mode_zap"))
-        ])
-        config.plugins.autozap_alamri.alert_type.setChoices([
-            ("circle", _T("type_circle")),
-            ("text", _T("type_text")),
-            ("silent", _T("type_silent"))
-        ])
-        config.plugins.autozap_alamri.alert_pos.setChoices([
-            ("top_right", _T("pos_tr")),
-            ("top_left", _T("pos_tl")),
-            ("bottom_right", _T("pos_br")),
-            ("bottom_left", _T("pos_bl")),
-            ("center", _T("pos_cnt"))
-        ])
-        config.plugins.autozap_alamri.alert_size.setChoices([
-            ("small", _T("sz_sm")),
-            ("medium", _T("sz_md")),
-            ("large", _T("sz_lg"))
-        ])
-        config.plugins.autozap_alamri.alert_color.setChoices([
-            ("#00ff00", _T("col_gr")),
-            ("#f0a500", _T("col_gd")),
-            ("#00bfff", _T("col_bl")),
-            ("#ff3333", _T("col_rd")),
-            ("#ffffff", _T("col_wh"))
-        ])
-
         self.list = [
-            getConfigListEntry(_T("enabled"), config.plugins.autozap_alamri.enabled),
-            getConfigListEntry(_T("lang_option"), config.plugins.autozap_alamri.lang)
+            getConfigListEntry("تفعيل المراقبة والإنعاش التلقائي", config.plugins.autozap_alamri.enabled),
+            getConfigListEntry("ايقاف البلجن السريع والتشغيل السريع بالريموت", config.plugins.autozap_alamri.kill_code),
+            getConfigListEntry("وضع المباريات فائق السرعة (استجابة فورية 3 ثواني)", config.plugins.autozap_alamri.sports_mode),
+            getConfigListEntry("تسريع التيونر والأوسكام ورفع الأولوية للقصوى", config.plugins.autozap_alamri.boost_system),
+            getConfigListEntry("فحص اتصال الإنترنت قبل التقليب", config.plugins.autozap_alamri.check_net),
+            getConfigListEntry("إعادة تشغيل الأوسكام تلقائياً عند فشل المحاولات", config.plugins.autozap_alamri.cam_restart),
+            getConfigListEntry("تثبيت أسرع شفرة ومنع التنقل العشوائي", config.plugins.autozap_alamri.lock_caid),
+            getConfigListEntry("طريقة الإنعاش عند تجمد القناة", config.plugins.autozap_alamri.mode),
+            getConfigListEntry("مهلة انقطاع الشفرة قبل التدخل (1 إلى 500 ثانية)", config.plugins.autozap_alamri.timeout),
+            getConfigListEntry("أقصى عدد محاولات قبل إعادة تشغيل الإيمو (1 إلى 500)", config.plugins.autozap_alamri.max_retries),
+            getConfigListEntry("شكل تنبيه الإنعاش على الشاشة", config.plugins.autozap_alamri.alert_type)
         ]
-
-        if config.plugins.autozap_alamri.enabled.value:
-            ch_type = _T("channel_sports") if (core_instance and core_instance.is_current_sports) else _T("channel_regular")
-            rescues = core_instance.recovery_count if core_instance else 0
-            self["status_info"].setText(_T("status_active") % (ch_type, rescues))
-
-            self.list.append(getConfigListEntry(_T("kill_code"), config.plugins.autozap_alamri.kill_code))
-            self.list.append(getConfigListEntry(_T("auto_sports"), config.plugins.autozap_alamri.auto_sports))
-            self.list.append(getConfigListEntry(_T("boost_system"), config.plugins.autozap_alamri.boost_system))
-            self.list.append(getConfigListEntry(_T("check_net"), config.plugins.autozap_alamri.check_net))
-            self.list.append(getConfigListEntry(_T("cam_restart"), config.plugins.autozap_alamri.cam_restart))
-            self.list.append(getConfigListEntry(_T("lock_caid"), config.plugins.autozap_alamri.lock_caid))
-            self.list.append(getConfigListEntry(_T("mode"), config.plugins.autozap_alamri.mode))
-            self.list.append(getConfigListEntry(_T("timeout"), config.plugins.autozap_alamri.timeout))
-            self.list.append(getConfigListEntry(_T("max_retries"), config.plugins.autozap_alamri.max_retries))
-            self.list.append(getConfigListEntry(_T("alert_type"), config.plugins.autozap_alamri.alert_type))
-
-            atype = config.plugins.autozap_alamri.alert_type.value
-            if atype == "text":
-                self.list.append(getConfigListEntry(_T("alert_pos"), config.plugins.autozap_alamri.alert_pos))
-                self.list.append(getConfigListEntry(_T("alert_size"), config.plugins.autozap_alamri.alert_size))
-                self.list.append(getConfigListEntry(_T("alert_color"), config.plugins.autozap_alamri.alert_color))
-            elif atype == "circle":
-                self.list.append(getConfigListEntry(_T("alert_pos"), config.plugins.autozap_alamri.alert_pos))
-                self.list.append(getConfigListEntry(_T("circle_size"), config.plugins.autozap_alamri.circle_size))
-                self.list.append(getConfigListEntry(_T("alert_color"), config.plugins.autozap_alamri.alert_color))
-        else:
-            self["status_info"].setText(_T("status_disabled"))
+        
+        atype = config.plugins.autozap_alamri.alert_type.value
+        if atype == "text":
+            self.list.append(getConfigListEntry("مكان ظهور التنبيه على الشاشة", config.plugins.autozap_alamri.alert_pos))
+            self.list.append(getConfigListEntry("حجم التنبيه على الشاشة", config.plugins.autozap_alamri.alert_size))
+            self.list.append(getConfigListEntry("لون خط التنبيه", config.plugins.autozap_alamri.alert_color))
+        elif atype == "circle":
+            self.list.append(getConfigListEntry("مكان ظهور الدائرة على الشاشة", config.plugins.autozap_alamri.alert_pos))
+            self.list.append(getConfigListEntry("حجم الدائرة الممتلئة (10 إلى 150)", config.plugins.autozap_alamri.circle_size))
+            self.list.append(getConfigListEntry("لون الدائرة الممتلئة", config.plugins.autozap_alamri.alert_color))
 
         self["config"].list = self.list
         self["config"].setList(self.list)
@@ -841,7 +634,7 @@ class AutoZapSetup(ConfigListScreen, Screen):
         global core_instance
         if core_instance:
             core_instance.restart_softcam()
-            self["status_info"].setText(_T("cam_restarted"))
+            self["status_info"].setText("تم إرسال أمر تنشيط وإعادة تشغيل الإيمو بنجاح!")
 
     def save(self):
         for x in self["config"].list:
@@ -864,26 +657,28 @@ def main(session, **kwargs):
 def Plugins(**kwargs):
     return [
         PluginDescriptor(where=PluginDescriptor.WHERE_SESSIONSTART, fnc=sessionstart),
-        PluginDescriptor(name="AutoZap Recovery 1.0", description="AutoZap Recovery | Developer: Ahmad Alamri", where=PluginDescriptor.WHERE_PLUGINMENU, icon=None, fnc=main)
+        PluginDescriptor(name="AutoZap Recovery 1.0", description="إعدادات إنعاش القنوات الذاتي | إعداد: Ahmad Alamri", where=PluginDescriptor.WHERE_PLUGINMENU, icon=None, fnc=main)
     ]
 PYEOF
 
+# ترك ملفات المصدر (.py) وعدم مسحها لضمان التوافقية القصوى مع صور DreamOS المغلقة التي تتطلبها
 python -m compileall "$TARGET_DIR" > /dev/null 2>&1 || python3 -m compileall "$TARGET_DIR" > /dev/null 2>&1
-if [ -d "$TARGET_DIR/__pycache__" ]; then
-    for f in "$TARGET_DIR/__pycache__"/*.pyc; do
-        [ -e "$f" ] || continue
-        base=$(basename "$f" | sed -E 's/\.cpython-[0-9]+\.pyc/\.pyc/')
-        cp -f "$f" "$TARGET_DIR/$base"
-    done
-fi
 
-rm -f "$TARGET_DIR"/*.py
+chmod 444 "$TARGET_DIR"/*.py 2>/dev/null
 chmod 444 "$TARGET_DIR"/*.pyc 2>/dev/null
 chmod 444 "$TARGET_DIR/__pycache__"/*.pyc 2>/dev/null
 
 echo "====================================================="
-echo " [SUCCESS] AutoZap Recovery 1.0 Installed Successfully!"
-echo " Developer: Ahmad Alamri                             "
-echo " Restarting Enigma2 GUI to activate services...      "
+echo " تم تحديث AutoZap وضبط الإعدادات الافتراضية بنجاح!   "
+echo " مطور الإضافة: Ahmad Alamri                          "
+echo " جاري إعادة تشغيل واجهة المستخدم (GUI)...            "
 echo "====================================================="
-killall -9 enigma2
+
+# تحديث أمر إعادة التشغيل ليدعم أجهزة DreamOS وأجهزة الأوبن سورس معاً
+if command -v systemctl > /dev/null 2>&1; then
+    systemctl restart enigma2
+else
+    killall -9 enigma2
+fi
+EOF
+sh /tmp/install_autozap_custom_defaults.sh
