@@ -1,6 +1,6 @@
 #!/bin/sh
 # ================================================================
-#   AutoZap Recovery v2.1 Final - Installer
+#   AutoZap Recovery v4.0 - Installer
 #   Designed & Developed by: Ahmad Alamri
 #   (C) 2026 Ahmad Alamri - All Rights Reserved
 #   OpenATV / OpenPLi / OpenBH / OpenViX / Egami / PurE2 / VTi /
@@ -10,7 +10,7 @@ PLUGIN_DIR="/usr/lib/enigma2/python/Plugins/Extensions/AutoZap_AhmadAlamri"
 
 echo ""
 echo "=============================================="
-echo "   AutoZap Recovery v2.1 Final"
+echo "   AutoZap Recovery v4.0"
 echo "   Designed & Developed by: Ahmad Alamri"
 echo "=============================================="
 
@@ -67,27 +67,31 @@ cat > "$PLUGIN_DIR/plugin.py" << 'AZ_EOF'
 # -*- coding: utf-8 -*-
 # ========================================================================
 #  Plugin Name : AutoZap Recovery
-#  Version     : 2.1 Final
+#  Version     : 4.0
 #  Designed and Developed by : Ahmad Alamri
 #  Copyright   : (C) 2026 Ahmad Alamri - All Rights Reserved
-#  Description : Smart auto-recovery for frozen channels on Enigma2
+#  Description : Automatic recovery of frozen / dead channels on Enigma2
 #  Compatible  : OpenATV, OpenPLi, OpenBH, OpenViX, Egami, PurE2, VTi,
 #                OpenSPA, DreamOS  -  Python 2.7 and Python 3.x
 # ========================================================================
 #
-#  Detection principle (healthy channels are never touched):
-#    A channel is treated as frozen ONLY when a playback-progress counter
-#    that is PROVEN to work on this receiver stops moving for
-#    "freeze_time" seconds, after the start-up grace period, while the
-#    tuner still has signal lock. Radio, recordings, media files,
-#    timeshift, paused playback, excluded channels and receivers without
-#    a usable progress source are skipped.
+#  Detection (a source is used only after it has proven to work on
+#  this receiver, so healthy channels are never touched):
+#    1. Decoder PTS   : picture progress counter stops moving.
+#    2. IPTV position : play position of the stream stops moving.
+#    3. ECM watch     : softcam stops answering (ecm.info not updated).
+#    4. No video      : channel never produced a picture after zapping.
+#
+#  Recovery modes: restart the same channel, zap away and back, or
+#  smart (restart first, then zap). Optional jump to the next channel
+#  after all attempts fail.
 # ========================================================================
 
 import os
 import time
 
-from enigma import eTimer, getDesktop, iPlayableService, iServiceInformation
+from enigma import (eTimer, getDesktop, iPlayableService, iServiceInformation,
+                    eServiceCenter, eServiceReference)
 try:
     from enigma import iFrontendInformation
 except ImportError:
@@ -99,30 +103,35 @@ from Components.Label import Label
 from Components.ScrollLabel import ScrollLabel
 from Components.Sources.StaticText import StaticText
 from Components.config import (config, configfile, ConfigSubsection, ConfigText,
-                               ConfigYesNo, ConfigSelection, getConfigListEntry)
+                               ConfigSelection, getConfigListEntry)
 from Plugins.Plugin import PluginDescriptor
 from Screens.MessageBox import MessageBox
 from Screens.Screen import Screen
 
-VERSION = "2.1"
+VERSION = "4.0"
 AUTHOR = "Ahmad Alamri"
-COPYRIGHT = "(C) 2026 Ahmad Alamri - All Rights Reserved"
 PLUGIN_PATH = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = "/tmp/autozap.log"
 LOG_MAX_BYTES = 256 * 1024
-POLL_MS = 2000
-STABLE_RESET_SEC = 60
+POLL_MS = 500                      # real-time sampling (2 checks per second)
+FAST_FREEZE_SEC = 2.5              # frozen picture detected after 2.5 s
+IPTV_FREEZE_SEC = 5.0              # IPTV needs a little buffering tolerance
+STABLE_RESET_SEC = 30
+RESTART_GAP_MS = (250, 700, 1500)  # stop -> play gap per attempt
+ZAP_HOLD_MS = (1200, 2000, 3000)   # time on the other channel per attempt
+AUTO_COOLDOWN = (20, 40, 90, 180, 300)
 PTS_PATHS = ("/proc/stb/vmpeg/0/pts", "/proc/stb/video/pts")
+ECM_PATHS = ("/tmp/ecm.info", "/tmp/ecm0.info")
 IPTV_TYPES = (4097, 5001, 5002, 8193, 8739)
 RADIO_SERVICE_TYPES = (0x02, 0x0A)
 
 # ------------------------------------------------------------------------
-# Configuration
+# Configuration  (all choices are re-labelled when the language changes)
 # ------------------------------------------------------------------------
 config.plugins.autozap_alamri = ConfigSubsection()
 cfg = config.plugins.autozap_alamri
 cfg.language = ConfigSelection(default="auto", choices=[
-    ("auto", "Auto / تلقائي"), ("ar", "العربية"), ("en", "English")])
+    ("auto", "Auto"), ("ar", "العربية"), ("en", "English")])
 
 
 def is_arabic():
@@ -139,25 +148,75 @@ def T(ar, en):
     return ar if is_arabic() else en
 
 
-def _secs(values):
-    return [(str(v), "%d %s" % (v, T("ثانية", "sec"))) for v in values]
+def choice_spec():
+    def sec(v):
+        return "%d %s" % (v, T("ثانية", "sec"))
+
+    def mins(v):
+        return "%d %s" % (v, T("دقيقة", "min"))
+    yes_no = [("true", T("نعم", "Yes")), ("false", T("لا", "No"))]
+    return [
+        ("language", "auto", [("auto", T("تلقائي (لغة الجهاز)", "Auto (box language)")),
+                              ("ar", "العربية"), ("en", "English")]),
+        ("enabled", "true", yes_no),
+        ("scope", "all", [("crypted", T("القنوات المشفرة فقط", "Encrypted channels only")),
+                              ("all", T("كل القنوات", "All channels"))]),
+        ("iptv", "true", yes_no),
+        ("mode", "smart", [("smart", T("ذكي: إعادة تشغيل ثم تقليب", "Smart: restart, then zap")),
+                           ("restart", T("إعادة تشغيل نفس القناة", "Restart the same channel")),
+                           ("zap", T("تقليب لقناة أخرى ثم العودة", "Zap away and back"))]),
+        ("freeze_time", "auto", [("auto", T("ذكي فائق السرعة (2.5 ث)", "Smart ultra-fast (2.5 s)"))] +
+                                [(str(v), sec(v)) for v in (2, 3, 4, 5, 6, 8, 10)]),
+        ("grace", "auto", [("auto", T("ذكي - يتعلم زمن كل قناة", "Smart - learns each channel"))] +
+                          [(str(v), sec(v)) for v in (3, 4, 5, 6, 8, 10, 15)]),
+        ("max_retries", "3", [(str(v), str(v)) for v in range(1, 6)]),
+        ("on_fail", "stay", [("stay", T("البقاء على القناة", "Stay on the channel")),
+                             ("next", T("الانتقال للقناة التالية", "Go to the next channel"))]),
+        ("cooldown", "auto", [("auto", T("تلقائي متدرج (20 ث ثم أطول)", "Auto progressive (20 s, then longer)")),
+                              ("0", T("لا (حتى تغيير القناة)", "Never (until zap)"))] +
+                             [(str(v), mins(v)) for v in (1, 2, 5, 10)]),
+        ("ecm_watch", "true", yes_no),
+        ("check_net", "true", yes_no),
+        ("notify", "toast", [("toast", T("إشعار البلجن", "Plugin toast")),
+                             ("popup", T("رسالة النظام", "System popup")),
+                             ("off", T("بدون إشعار", "Off"))]),
+        ("debug", "false", yes_no),
+    ]
 
 
-cfg.enabled = ConfigYesNo(default=True)
-cfg.scope = ConfigSelection(default="crypted", choices=[
-    ("crypted", T("القنوات المشفرة فقط", "Encrypted channels only")),
-    ("all", T("كل القنوات", "All channels"))])
-cfg.iptv = ConfigYesNo(default=True)
-cfg.freeze_time = ConfigSelection(default="10", choices=_secs((6, 8, 10, 12, 15, 20, 30)))
-cfg.grace = ConfigSelection(default="15", choices=_secs((8, 10, 15, 20, 30, 45)))
-cfg.max_retries = ConfigSelection(default="3", choices=[(str(v), str(v)) for v in range(1, 6)])
-cfg.cooldown = ConfigSelection(default="5", choices=[
-    ("0", T("لا (حتى تغيير القناة)", "Never (until zap)"))] +
-    [(str(v), "%d %s" % (v, T("دقيقة", "min"))) for v in (2, 5, 10, 30)])
-cfg.check_net = ConfigYesNo(default=True)
-cfg.notify = ConfigYesNo(default=True)
-cfg.debug = ConfigYesNo(default=False)
+for _name, _default, _choices in choice_spec():
+    if _name != "language":
+        setattr(cfg, _name, ConfigSelection(default=_default, choices=_choices))
 cfg.excluded = ConfigText(default="", fixed_size=False)
+cfg.hw_pts = ConfigText(default="", fixed_size=False)     # receiver model where PTS was verified
+cfg.hw_video = ConfigText(default="", fixed_size=False)   # receiver model where video size was verified
+
+
+def relabel():
+    """Re-translate every choice label without touching the values."""
+    for name, default, choices in choice_spec():
+        el = getattr(cfg, name, None)
+        if el is None:
+            continue
+        try:
+            value = el.value
+            el.setChoices(choices, default=default)
+            if el.value != value and value in [c[0] for c in choices]:
+                el.value = value
+        except Exception:
+            pass
+
+
+relabel()
+
+
+def on(element):
+    return element.value == "true"
+
+
+def copyright_text():
+    return T("تصميم وتطوير: %s  |  جميع الحقوق محفوظة (C) 2026" % AUTHOR,
+             "Designed & Developed by %s  |  (C) 2026 All Rights Reserved" % AUTHOR)
 
 
 # ------------------------------------------------------------------------
@@ -177,7 +236,7 @@ def log(msg):
 
 
 def debug(msg):
-    if cfg.debug.value:
+    if on(cfg.debug):
         log("[debug] %s" % msg)
 
 
@@ -188,20 +247,10 @@ def read_log_tail(max_lines=200):
         if not isinstance(data, str):
             data = data.decode("utf-8", "ignore")
         lines = data.strip().splitlines()[-max_lines:]
-        lines.reverse()                     # newest first
+        lines.reverse()
         return "\n".join(lines)
     except Exception:
         return ""
-
-
-def notify(text, timeout=4):
-    if not cfg.notify.value:
-        return
-    try:
-        from Tools import Notifications
-        Notifications.AddPopup(text, MessageBox.TYPE_INFO, timeout, "AutoZapRecovery")
-    except Exception as e:
-        debug("popup failed: %s" % e)
 
 
 def has_default_route():
@@ -217,6 +266,43 @@ def has_default_route():
         return True
 
 
+def ecm_mtime():
+    newest = None
+    for path in ECM_PATHS:
+        try:
+            m = os.stat(path).st_mtime
+            if newest is None or m > newest:
+                newest = m
+        except (IOError, OSError):
+            continue
+    return newest
+
+
+def read_pts():
+    for path in PTS_PATHS:
+        try:
+            with open(path) as f:
+                value = f.read().strip()
+            if value:
+                return value, path
+        except (IOError, OSError):
+            continue
+    return None, None
+
+
+def box_model():
+    for path in ("/proc/stb/info/vumodel", "/proc/stb/info/boxtype", "/proc/stb/info/model",
+                 "/proc/stb/info/gbmodel", "/etc/hostname"):
+        try:
+            with open(path) as f:
+                value = f.readline().strip()
+            if value:
+                return value
+        except (IOError, OSError):
+            continue
+    return "enigma2"
+
+
 def connect_timer(timer, fnc, keep):
     try:
         timer.callback.append(fnc)
@@ -225,7 +311,6 @@ def connect_timer(timer, fnc, keep):
 
 
 def ref_key(ref_str):
-    """Stable key of a service reference (without the display name)."""
     return ":".join((ref_str or "").split(":")[:11])
 
 
@@ -239,6 +324,42 @@ def save_excluded(keys):
     configfile.save()
 
 
+def parental_control_active():
+    for path in (("ParentalControl", "configured"), ("ParentalControl", "servicepinactive")):
+        try:
+            if getattr(getattr(config, path[0]), path[1]).value:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def infobar():
+    try:
+        from Screens.InfoBar import InfoBar
+        return InfoBar.instance
+    except Exception:
+        return None
+
+
+def play_ref(nav, ref):
+    try:
+        return nav.playService(ref, checkParentalControl=False)
+    except TypeError:
+        return nav.playService(ref)
+
+
+# ------------------------------------------------------------------------
+# Skin helpers
+# ------------------------------------------------------------------------
+C_BG = "#000b1a2e"
+C_PANEL = "#00102440"
+C_GOLD = "#00f0a500"
+C_CYAN = "#0019c3e6"
+C_TEXT = "#00ffffff"
+C_DIM = "#009fb3c8"
+
+
 def skin_scale():
     try:
         width = getDesktop(0).size().width()
@@ -248,64 +369,277 @@ def skin_scale():
 
 
 def logo_file(k):
-    name = "logo_fhd.png" if k >= 1.4 else "logo.png"
-    path = os.path.join(PLUGIN_PATH, name)
+    path = os.path.join(PLUGIN_PATH, "logo_fhd.png" if k >= 1.4 else "logo.png")
     return path if os.path.exists(path) else None
+
+
+def logo_size(k):
+    return 105 if k >= 1.4 else 70
+
+
+def align():
+    return "right" if is_arabic() else "left"
+
+
+def _button_row(z, y, h, font):
+    colors = (("key_red", "#00b3261e"), ("key_green", "#00188a2e"),
+              ("key_yellow", "#00b58900"), ("key_blue", "#001c5fb8"))
+    out = []
+    width, gap, x0 = 235, 20, 20
+    for i, (name, col) in enumerate(colors):
+        x = x0 + i * (width + gap)
+        out.append('<eLabel position="%d,%d" size="%d,%d" backgroundColor="%s" zPosition="1" />'
+                   % (z(x), z(y + h - 5), z(width), max(2, z(5)), col))
+        out.append('<widget source="%s" render="Label" position="%d,%d" size="%d,%d" font="Regular;%d" '
+                   'halign="center" valign="center" foregroundColor="%s" backgroundColor="%s" '
+                   'transparent="1" zPosition="2" />'
+                   % (name, z(x), z(y), z(width), z(h - 5), z(font), C_TEXT, C_BG))
+    return "\n  ".join(out)
+
+
+def _header(z, W):
+    k = skin_scale()
+    logo = logo_file(k)
+    size = logo_size(k)
+    parts = [
+        '<eLabel position="0,0" size="%d,%d" backgroundColor="%s" zPosition="0" />' % (z(W), z(80), C_BG),
+        '<eLabel position="0,%d" size="%d,%d" backgroundColor="%s" zPosition="1" />'
+        % (z(80), z(W), max(2, z(3)), C_GOLD),
+        '<widget source="title" render="Label" position="%d,%d" size="%d,%d" font="Regular;%d" '
+        'foregroundColor="%s" backgroundColor="%s" transparent="1" valign="center" zPosition="2" />'
+        % (z(100), z(6), z(W - 330), z(42), z(30), C_TEXT, C_BG),
+        '<widget source="subtitle" render="Label" position="%d,%d" size="%d,%d" font="Regular;%d" '
+        'foregroundColor="%s" backgroundColor="%s" transparent="1" valign="center" zPosition="2" />'
+        % (z(100), z(48), z(W - 330), z(26), z(18), C_GOLD, C_BG),
+    ]
+    if logo and size + z(15) <= z(100) and size <= z(80):
+        parts.append('<ePixmap position="%d,%d" size="%d,%d" pixmap="%s" zPosition="2" />'
+                     % (z(15), (z(80) - size) // 2, size, size, logo))
+    return "\n  ".join(parts)
+
+
+def _footer(z, W):
+    return """<eLabel position="0,%d" size="%d,%d" backgroundColor="%s" zPosition="1" />
+  %s
+  <widget source="copyright" render="Label" position="0,%d" size="%d,%d" font="Regular;%d" halign="center" valign="center" foregroundColor="%s" backgroundColor="%s" transparent="1" zPosition="2" />""" % (
+        z(528), z(W), max(1, z(2)), C_GOLD, _button_row(z, 538, 44, 20),
+        z(588), z(W), z(28), z(17), C_GOLD, C_BG)
+
+
+def _zfunc():
+    k = skin_scale()
+
+    def z(v):
+        return int(round(v * k))
+    return z
+
+
+def setup_skin():
+    z = _zfunc()
+    W, H = 1040, 620
+    return """
+<screen name="AutoZapSetupV3" position="center,center" size="%(w)d,%(h)d" flags="wfNoBorder" backgroundColor="%(bg)s" title="AutoZap Recovery">
+  %(header)s
+  <widget name="badge_on" position="%(bx)d,%(by)d" size="%(bw)d,%(bh)d" font="Regular;%(bf)d" halign="center" valign="center" foregroundColor="#00ffffff" backgroundColor="#00188a2e" zPosition="3" />
+  <widget name="badge_off" position="%(bx)d,%(by)d" size="%(bw)d,%(bh)d" font="Regular;%(bf)d" halign="center" valign="center" foregroundColor="#00ffffff" backgroundColor="#00b3261e" zPosition="3" />
+  <widget name="config" position="%(cx)d,%(cy)d" size="%(cw)d,%(ch)d" backgroundColor="%(bg)s" scrollbarMode="showOnDemand" zPosition="1" />
+  <eLabel position="%(px)d,%(cy)d" size="%(pw)d,%(ch)d" backgroundColor="%(panel)s" zPosition="0" />
+  <eLabel position="%(px)d,%(cy)d" size="%(stripe)d,%(ch)d" backgroundColor="%(cyan)s" zPosition="1" />
+  <widget source="status_title" render="Label" position="%(ptx)d,%(pty)d" size="%(ptw)d,%(pth)d" font="Regular;%(ptf)d" halign="%(al)s" foregroundColor="%(cyan)s" backgroundColor="%(panel)s" transparent="1" zPosition="2" />
+  <widget source="status" render="Label" position="%(ptx)d,%(psy)d" size="%(ptw)d,%(psh)d" font="Regular;%(psf)d" halign="%(al)s" foregroundColor="%(text)s" backgroundColor="%(panel)s" transparent="1" zPosition="2" />
+  <widget source="help" render="Label" position="%(cx)d,%(hy)d" size="%(fullw)d,%(hh)d" font="Regular;%(hf)d" halign="%(al)s" foregroundColor="%(dim)s" backgroundColor="%(bg)s" transparent="1" valign="center" zPosition="2" />
+  %(footer)s
+</screen>""" % dict(
+        w=z(W), h=z(H), bg=C_BG, panel=C_PANEL, cyan=C_CYAN, text=C_TEXT, dim=C_DIM,
+        header=_header(z, W), footer=_footer(z, W), al=align(),
+        bx=z(W - 190), by=z(22), bw=z(170), bh=z(36), bf=z(20),
+        cx=z(20), cy=z(100), cw=z(620), ch=z(390),
+        px=z(660), pw=z(360), stripe=max(2, z(4)),
+        ptx=z(680), pty=z(110), ptw=z(330), pth=z(34), ptf=z(24),
+        psy=z(150), psh=z(330), psf=z(18),
+        hy=z(495), fullw=z(1000), hh=z(28), hf=z(17))
+
+
+def text_skin(name):
+    z = _zfunc()
+    W, H = 1040, 620
+    return """
+<screen name="%(name)s" position="center,center" size="%(w)d,%(h)d" flags="wfNoBorder" backgroundColor="%(bg)s" title="AutoZap Recovery">
+  %(header)s
+  <eLabel position="%(x)d,%(y)d" size="%(tw)d,%(th)d" backgroundColor="%(panel)s" zPosition="0" />
+  <widget name="text" position="%(ix)d,%(iy)d" size="%(iw)d,%(ih)d" font="Regular;%(f)d" halign="%(al)s" foregroundColor="%(text)s" backgroundColor="%(panel)s" transparent="1" zPosition="1" />
+  %(footer)s
+</screen>""" % dict(
+        name=name, w=z(W), h=z(H), bg=C_BG, panel=C_PANEL, text=C_TEXT, al=align(),
+        header=_header(z, W), footer=_footer(z, W),
+        x=z(20), y=z(100), tw=z(1000), th=z(420),
+        ix=z(35), iy=z(110), iw=z(970), ih=z(400), f=z(19))
+
+
+def toast_skin():
+    z = _zfunc()
+    k = skin_scale()
+    try:
+        width = getDesktop(0).size().width()
+    except Exception:
+        width = 1280
+    W, H = 540, 96
+    logo = logo_file(k)
+    size = logo_size(k)
+    pix = ""
+    tx = 20
+    if logo and size <= z(H) - 4:
+        pix = '<ePixmap position="%d,%d" size="%d,%d" pixmap="%s" zPosition="2" />' % (
+            z(16), (z(H) - size) // 2, size, size, logo)
+        tx = 100
+    return """
+<screen name="AutoZapToastV3" position="%(x)d,%(y)d" size="%(w)d,%(h)d" flags="wfNoBorder" backgroundColor="%(bg)s" zPosition="99" title="AutoZap">
+  <eLabel position="0,0" size="%(stripe)d,%(h)d" backgroundColor="%(gold)s" zPosition="1" />
+  %(pix)s
+  <widget name="title" position="%(tx)d,%(t1y)d" size="%(tw)d,%(t1h)d" font="Regular;%(t1f)d" halign="%(al)s" valign="center" foregroundColor="%(gold)s" backgroundColor="%(bg)s" transparent="1" zPosition="2" />
+  <widget name="msg" position="%(tx)d,%(t2y)d" size="%(tw)d,%(t2h)d" font="Regular;%(t2f)d" halign="%(al)s" valign="top" foregroundColor="%(text)s" backgroundColor="%(bg)s" transparent="1" zPosition="2" />
+</screen>""" % dict(
+        x=max(0, width - z(W) - z(40)), y=z(40), w=z(W), h=z(H), bg=C_BG, gold=C_GOLD, text=C_TEXT,
+        stripe=max(3, z(6)), pix=pix, al=align(),
+        tx=z(tx), tw=z(W - tx - 16), t1y=z(8), t1h=z(30), t1f=z(22),
+        t2y=z(40), t2h=z(52), t2f=z(19))
+
+
+class AutoZapToast(Screen):
+    def __init__(self, session):
+        self.skin = toast_skin()
+        Screen.__init__(self, session)
+        self["title"] = Label("AutoZap Recovery")
+        self["msg"] = Label("")
+
+    def setMessage(self, text):
+        self["msg"].setText(text)
 
 
 # ------------------------------------------------------------------------
 # Core monitor
 # ------------------------------------------------------------------------
 class AutoZapCore(object):
+    """Real-time freeze detector and recovery engine."""
+
     def __init__(self, session):
         self.session = session
         self._conns = []
-        self.pts_validated = False   # decoder PTS proven to move on this box
+        self.learn = {}                 # per channel: start time, natural gaps
+        self.global_start = None        # learned average start time (all channels)
         self.restarts = 0
         self.recovered = 0
+        self.best_downtime = None
+        self.last_downtime = None
         self.last_action = ""
         self.state = ""
         self.channel = ""
-        self.pending_ref = None
+        self.source = ""
+        self.pending = None
         self.in_restart = False
+        self.toast_dlg = None
+        self.last_recover_time = 0.0
+        self._model = box_model()
         self._reset_state(None)
 
         self.poll = eTimer()
         connect_timer(self.poll, self.tick, self._conns)
         self.play_timer = eTimer()
         connect_timer(self.play_timer, self._play_pending, self._conns)
+        self.toast_timer = eTimer()
+        connect_timer(self.toast_timer, self._hide_toast, self._conns)
         try:
             session.nav.event.append(self._on_nav_event)
         except Exception as e:
             debug("nav.event unavailable: %s" % e)
         self.poll.start(POLL_MS, False)
-        log("AutoZap Recovery v%s started - %s" % (VERSION, AUTHOR))
+        log("AutoZap Recovery v%s - %s (%s)" % (VERSION, T("بدأ التشغيل", "started"), self._model))
+
+    # --- hardware capabilities (remembered per receiver model) -------
+    def hw_ok(self, element):
+        return element.value == self._model
+
+    def hw_mark(self, element):
+        if element.value != self._model:
+            element.value = self._model
+            element.save()
+            try:
+                configfile.save()
+            except Exception:
+                pass
+            log(T("تم التحقق من مصدر الكشف على هذا الجهاز", "Detection source verified on this receiver"))
+
+    # --- learning -------------------------------------------------------
+    def _learned(self):
+        return self.learn.setdefault(self.key or "-", {"start": None, "gap": 0.0})
+
+    def _learn_start(self, seconds, clean):
+        # capped so a long outage can never make the plugin slow
+        seconds = min(max(seconds, 0.3), 8.0)
+        d = self._learned()
+        d["start"] = seconds if d["start"] is None else d["start"] * 0.7 + seconds * 0.3
+        if clean:   # normal zap, not the end of an outage
+            self.global_start = seconds if self.global_start is None else self.global_start * 0.8 + seconds * 0.2
+
+    def _learn_gap(self, seconds):
+        d = self._learned()
+        d["gap"] = max(d["gap"] * 0.9, min(seconds, 8.0))
+
+    def freeze_threshold(self, kind):
+        v = cfg.freeze_time.value
+        if v != "auto":
+            return float(v)
+        base = IPTV_FREEZE_SEC if kind == "iptv" else FAST_FREEZE_SEC
+        return min(10.0, max(base, self._learned()["gap"] * 1.5 + 0.5))
+
+    def start_timeout(self, kind):
+        v = cfg.grace.value
+        if v != "auto":
+            return float(v)
+        s = self._learned()["start"] or self.global_start or 2.5
+        base = 6.0 if kind == "iptv" else 4.0
+        return min(12.0, max(base, s * 1.5 + 2.0))
+
+    def ecm_threshold(self):
+        return min(40.0, max(8.0, self.ecm_max_interval * 1.3 + 2.0))
 
     # --- state ---------------------------------------------------------
     def _reset_state(self, ref_str, keep_retries=False):
         now = time.time()
         self.ref_str = ref_str
+        self.key = ref_key(ref_str) if ref_str else None
         self.zap_time = now
         self.last_pos = None
-        self.last_change = now
+        self.pos_change = now
+        self.moves = 0
+        self.started = False
         self.good_since = None
         self._last_skip = None
+        self.ecm_last_mtime = ecm_mtime()
+        self.ecm_last = now
+        self.unsafe_until = 0.0
         if not keep_retries:
             self.retries = 0
             self.gave_up_at = None
-            self.ever_advanced = False
+            self.giveups = 0
             self.awaiting_result = False
+            self.freeze_began = None
+            self.ecm_updates = 0
+            self.ecm_max_interval = 0.0
 
     def reset(self):
         self._reset_state(None)
 
     def _on_nav_event(self, ev):
-        if self.in_restart or self.pending_ref is not None:
+        if self.in_restart or self.pending is not None:
             return
         try:
             if ev == iPlayableService.evStart:
                 ref = self.session.nav.getCurrentlyPlayingServiceReference()
-                self._reset_state(ref.toString() if ref else None)
+                ref_str = ref.toString() if ref else None
+                own = (time.time() - self.last_recover_time < 10 and ref_str is not None
+                       and ref_key(ref_str) == self.key)
+                self._reset_state(ref_str, keep_retries=own)
         except Exception:
             pass
 
@@ -313,6 +647,34 @@ class AutoZapCore(object):
         if reason != self._last_skip:
             self._last_skip = reason
             debug("%s | %s" % (reason, self.ref_str or "-"))
+
+    # --- notifications -------------------------------------------------
+    def toast(self, text, seconds=4):
+        mode = cfg.notify.value
+        if mode == "off" or self._in_standby():
+            return
+        if mode == "toast":
+            try:
+                if self.toast_dlg is None:
+                    self.toast_dlg = self.session.instantiateDialog(AutoZapToast)
+                self.toast_dlg.setMessage(text)
+                self.toast_dlg.show()
+                self.toast_timer.start(int(seconds * 1000), True)
+                return
+            except Exception as e:
+                log("toast failed, using popup: %s" % e)
+        try:
+            from Tools import Notifications
+            Notifications.AddPopup(text, MessageBox.TYPE_INFO, int(seconds), "AutoZapRecovery")
+        except Exception as e:
+            debug("popup failed: %s" % e)
+
+    def _hide_toast(self):
+        try:
+            if self.toast_dlg is not None:
+                self.toast_dlg.hide()
+        except Exception:
+            pass
 
     # --- environment checks ------------------------------------------
     def _in_standby(self):
@@ -323,12 +685,11 @@ class AutoZapCore(object):
             return False
 
     def _is_paused(self):
+        ib = infobar()
         try:
-            from Screens.InfoBar import InfoBar
-            ib = InfoBar.instance
             state = getattr(ib, "seekstate", None)
-            play = getattr(ib, "SEEK_STATE_PLAY", None)
-            if ib is not None and state is not None and play is not None and state != play:
+            pause = getattr(ib, "SEEK_STATE_PAUSE", None)
+            if ib is not None and state is not None and pause is not None and state == pause:
                 return True
         except Exception:
             pass
@@ -346,14 +707,30 @@ class AutoZapCore(object):
             pass
         return False
 
-    def _timeshift_active(self, service):
+    @staticmethod
+    def _timeshift_active(service):
         try:
             ts = service.timeshift()
             return bool(ts and ts.isTimeshiftActive())
         except Exception:
             return False
 
-    def _classify(self, ref, ref_str, service):
+    @staticmethod
+    def _is_crypted(info):
+        try:
+            return bool(info and info.getInfo(iServiceInformation.sIsCrypted) == 1)
+        except Exception:
+            return False
+
+    @staticmethod
+    def _video_width(info):
+        try:
+            w = info.getInfo(iServiceInformation.sVideoWidth) if info else -1
+            return w if w is not None else -1
+        except Exception:
+            return -1
+
+    def classify(self, ref, ref_str, service):
         """Return (kind, reason). kind is 'dvb', 'iptv' or None."""
         fields = ref_str.split(":")
         try:
@@ -372,8 +749,8 @@ class AutoZapCore(object):
         if rtype in IPTV_TYPES or "://" in path:
             if path.startswith("/"):
                 return None, T("ملف محلي", "Local file")
-            if not cfg.iptv.value:
-                return None, T("مراقبة IPTV متوقفة", "IPTV monitoring off")
+            if not on(cfg.iptv):
+                return None, T("مراقبة IPTV متوقفة", "IPTV monitoring is off")
             return "iptv", ""
 
         if rtype != 1 or path:
@@ -389,13 +766,14 @@ class AutoZapCore(object):
         vpid = info.getInfo(iServiceInformation.sVideoPID)
         if vpid is None or vpid <= 0:
             return None, T("بدون فيديو", "No video stream")
-        if cfg.scope.value == "crypted" and info.getInfo(iServiceInformation.sIsCrypted) != 1:
+        if cfg.scope.value == "crypted" and not self._is_crypted(info):
             return None, T("قناة مفتوحة (خارج النطاق)", "Free channel (out of scope)")
         if self._timeshift_active(service):
             return None, T("التايم شفت نشط", "Timeshift active")
         return "dvb", ""
 
-    def _read_position(self, kind, service):
+    @staticmethod
+    def read_position(kind, service):
         """Return (position, trusted). trusted = from the service API."""
         if kind == "iptv":
             try:
@@ -406,37 +784,20 @@ class AutoZapCore(object):
                         return r[1], True
             except Exception:
                 pass
-        for path in PTS_PATHS:
-            try:
-                with open(path) as f:
-                    value = f.read().strip()
-                if value:
-                    return value, False
-            except (IOError, OSError):
-                continue
-        return None, False
+        value, path = read_pts()
+        return value, False
 
-    def _unsafe_reason(self, kind, service):
-        crypted = False
-        try:
-            info = service.info()
-            crypted = bool(info and info.getInfo(iServiceInformation.sIsCrypted) == 1)
-        except Exception:
-            pass
+    def unsafe_reason(self, kind, service, crypted):
         if kind == "dvb" and iFrontendInformation is not None:
             try:
                 fe = service.frontendInfo()
                 if fe is not None and fe.getFrontendInfo(iFrontendInformation.lockState) == 0:
-                    return T("لا توجد إشارة من التيونر", "No tuner signal lock")
+                    return T("لا توجد إشارة من التيونر (الدش/الكابل)", "No tuner signal lock (dish/cable)")
             except Exception:
                 pass
-        if cfg.check_net.value and (kind == "iptv" or crypted) and not has_default_route():
-            return T("الشبكة مفصولة - بانتظار عودتها", "Network down - waiting")
+        if on(cfg.check_net) and (kind == "iptv" or crypted) and not has_default_route():
+            return T("الشبكة مفصولة - بانتظار عودتها", "Network is down - waiting")
         return None
-
-    def _limit(self):
-        # a channel never seen playing gets a single attempt only
-        return int(cfg.max_retries.value) if self.ever_advanced else 1
 
     @staticmethod
     def _name(service):
@@ -446,110 +807,218 @@ class AutoZapCore(object):
         except Exception:
             return "?"
 
-    # --- main loop -----------------------------------------------------
+    def _update_ecm(self, now):
+        m = ecm_mtime()
+        if m is not None and m != self.ecm_last_mtime:
+            if self.ecm_updates >= 1:
+                interval = min(now - self.ecm_last, 60.0)
+                if interval > self.ecm_max_interval:
+                    self.ecm_max_interval = interval
+            self.ecm_updates += 1
+            self.ecm_last = now
+        self.ecm_last_mtime = m
+
+    def _cooldown_seconds(self):
+        v = cfg.cooldown.value
+        if v == "auto":
+            return AUTO_COOLDOWN[min(max(self.giveups, 1), len(AUTO_COOLDOWN)) - 1]
+        return int(v) * 60
+
+    # --- main loop (every 0.5 s) ----------------------------------------
     def tick(self):
         try:
             self._tick()
         except Exception as e:
             log("tick error: %s" % e)
 
+    def _playing_ok(self, now, source):
+        """Channel shows a moving picture."""
+        if self.awaiting_result:
+            self.awaiting_result = False
+            self.recovered += 1
+            down = now - (self.freeze_began or self.zap_time)
+            self.last_downtime = down
+            if self.best_downtime is None or down < self.best_downtime:
+                self.best_downtime = down
+            log(T("عادت القناة خلال %.1f ث: %s", "Channel back after %.1fs: %s") % (down, self.channel))
+            self.toast(T("عادت القناة خلال %.1f ثانية\n%s", "Channel back after %.1f seconds\n%s")
+                       % (down, self.channel), 3)
+        if self.good_since is None:
+            self.good_since = now
+        if (self.retries or self.giveups) and now - self.good_since >= STABLE_RESET_SEC:
+            self.retries = 0
+            self.giveups = 0
+            self.gave_up_at = None
+        self.freeze_began = None
+        self.state = T("يراقب - البث سليم", "Monitoring - playing OK")
+        self.source = source
+
     def _tick(self):
-        if self.pending_ref is not None:
+        if self.pending is not None:
             return
-        if not cfg.enabled.value:
+        if not on(cfg.enabled):
             self.state = T("متوقف", "Disabled")
             return
         if self._in_standby():
             self.state = T("الجهاز في وضع الاستعداد", "Standby")
             self.channel = ""
-            self._reset_state(None)
+            if self.ref_str is not None:
+                self._reset_state(None)
             return
         nav = self.session.nav
         ref = nav.getCurrentlyPlayingServiceReference()
         if ref is None:
             self.state = T("لا توجد قناة", "No service")
             self.channel = ""
-            self._reset_state(None)
+            if self.ref_str is not None:
+                self._reset_state(None)
             return
         ref_str = ref.toString()
         if ref_str != self.ref_str:
             self._reset_state(ref_str)
-            return
         service = nav.getCurrentService()
         if service is None:
             return
         self.channel = self._name(service)
-        kind, why = self._classify(ref, ref_str, service)
+        kind, why = self.classify(ref, ref_str, service)
         if kind is None:
             self.state = T("تخطي: ", "Skipped: ") + why
+            self.source = ""
             self.last_pos = None
+            self.started = False
+            self.moves = 0
+            self.zap_time = self.pos_change = time.time()
             return
 
-        pos, trusted = self._read_position(kind, service)
-        if pos is None:
-            self.state = T("لا يوجد مصدر كشف بهذا الجهاز", "No detection source on this box")
-            self._skip("no progress source on this receiver - no action")
-            return
         now = time.time()
+        info = service.info()
+        crypted = self._is_crypted(info)
+        width = self._video_width(info)
+        if width > 0:
+            self.hw_mark(cfg.hw_video)
+        use_ecm = kind == "dvb" and crypted and on(cfg.ecm_watch)
+        if use_ecm:
+            self._update_ecm(now)
 
-        # ---- picture is moving ----
-        if pos != self.last_pos:
-            if self.last_pos is not None:
-                self.ever_advanced = True
-                if not trusted:
-                    self.pts_validated = True
-                if self.awaiting_result:
-                    self.awaiting_result = False
-                    self.recovered += 1
-                    log("Recovered OK: %s" % self.channel)
-                self.state = T("يراقب - البث سليم", "Monitoring - playing OK")
-            if self.good_since is None:
-                self.good_since = now
+        pos, trusted = self.read_position(kind, service)
+        moved = False
+        if pos is not None:
+            if self.last_pos is not None and pos != self.last_pos:
+                moved = True
             self.last_pos = pos
-            self.last_change = now
-            if self.retries and now - self.good_since >= STABLE_RESET_SEC:
-                self.retries = 0
-                self.gave_up_at = None
-            return
+        pts_ok = pos is not None and (trusted or self.hw_ok(cfg.hw_pts))
 
-        # ---- picture did not move ----
+        # ---------------- picture is moving --------------------------
+        if moved:
+            gap = now - self.pos_change
+            self.pos_change = now
+            self.moves += 1
+            if not trusted and self.moves >= 3:
+                self.hw_mark(cfg.hw_pts)
+                pts_ok = True
+            if not self.started and self.moves >= 2:
+                self.started = True
+                self._learn_start(now - self.zap_time, not self.awaiting_result and not self.giveups)
+            elif self.started and gap >= 1.2:
+                self._learn_gap(gap)            # natural hiccup that healed itself
+            if self.started and pts_ok:
+                self._playing_ok(now, "PTS")
+                return
+
+        freeze_thr = self.freeze_threshold(kind)
+        start_thr = self.start_timeout(kind)
+        stalled = 0.0
+        source = None
+
+        if pts_ok:
+            if not self.started:
+                waited = now - self.zap_time
+                if waited < start_thr:
+                    if now >= self.unsafe_until:
+                        self.state = T("تشغيل القناة... %.1f ث", "Starting channel... %.1fs") % waited
+                    return
+                stalled, source = waited, T("لم تبدأ", "No start")
+                self.freeze_began = self.freeze_began or self.zap_time
+            else:
+                stalled = now - self.pos_change
+                if stalled < freeze_thr:
+                    if stalled >= 1.0:
+                        self.good_since = None
+                        if now >= self.unsafe_until:
+                            self.state = T("اشتباه تجمد: %.1f ث", "Possible freeze: %.1fs") % stalled
+                    return
+                source = "PTS"
+                self.freeze_began = self.freeze_began or self.pos_change
+        else:
+            # fallback detectors for receivers without a usable PTS
+            ecm_ok = use_ecm and self.ecm_updates >= 3
+            fresh_ecm = ecm_ok and now - self.ecm_last < self.ecm_threshold()
+            video_ok = self.hw_ok(cfg.hw_video)
+            if (width > 0 or not video_ok) and (fresh_ecm or not use_ecm) and (video_ok or ecm_ok):
+                self.started = True
+                self._playing_ok(now, "ECM" if ecm_ok else T("الفيديو", "Video"))
+                return
+            waited = now - self.zap_time
+            if video_ok and width <= 0 and waited >= start_thr:
+                stalled, source = waited, T("لم تبدأ", "No start")
+                self.freeze_began = self.freeze_began or self.zap_time
+            elif ecm_ok and now - self.ecm_last >= self.ecm_threshold():
+                stalled, source = now - self.ecm_last, "ECM"
+                self.freeze_began = self.freeze_began or self.ecm_last
+            else:
+                if not (video_ok or ecm_ok):
+                    self.state = T("بانتظار التحقق من مصدر الكشف", "Verifying detection source")
+                    self._skip("no verified detection source yet - no action")
+                else:
+                    self.state = T("يراقب", "Monitoring")
+                return
+
         self.good_since = None
-        if now - self.zap_time < int(cfg.grace.value):
-            self.state = T("مهلة بدء القناة", "Start-up grace")
-            return
-        if not (self.ever_advanced or trusted or self.pts_validated):
-            self.state = T("بانتظار التحقق من مصدر الكشف", "Verifying detection source")
-            self._skip("progress source not verified yet - no action")
-            return
-        stalled = now - self.last_change
-        if stalled < int(cfg.freeze_time.value):
-            self.state = T("اشتباه تجمد: %d ث", "Possible freeze: %ds") % int(stalled)
-            return
-        reason = self._unsafe_reason(kind, service)
+        self.source = source
+        reason = self.unsafe_reason(kind, service, crypted)
         if reason:
             self.state = reason
+            self.unsafe_until = now + 10.0
             self._skip(reason)
-            self.last_change = now          # demand a full new freeze window
+            self.pos_change = now
+            self.zap_time = now
+            self.ecm_last = now
             return
 
-        limit = self._limit()
+        limit = int(cfg.max_retries.value)
         if self.retries >= limit:
             if self.gave_up_at is None:
                 self.gave_up_at = now
-                log("Gave up after %d attempts: %s" % (self.retries, self.channel))
-                notify(T("AutoZap: القناة لم تستجب، تم إيقاف المحاولات مؤقتاً",
-                         "AutoZap: channel did not respond, attempts paused"))
-            cooldown = int(cfg.cooldown.value) * 60
-            self.state = T("توقفت المحاولات لهذه القناة", "Attempts paused for this channel")
-            if cooldown and now - self.gave_up_at >= cooldown:
+                self.giveups += 1
+                log(T("توقفت المحاولات بعد %d: %s", "Gave up after %d attempts: %s") % (self.retries, self.channel))
+                if cfg.on_fail.value == "next" and self._zap_next():
+                    self.toast(T("القناة %s لا تستجيب\nتم الانتقال للقناة التالية",
+                                 "%s is not responding\nswitched to the next channel") % self.channel)
+                    return
+                wait = self._cooldown_seconds()
+                self.toast(T("القناة لا تستجيب حالياً\nمحاولة جديدة تلقائياً بعد %d ث",
+                             "Channel is not responding\nretrying automatically in %ds") % wait
+                           if wait else T("القناة لا تستجيب\nتم إيقاف المحاولات", "Channel is not responding\nattempts stopped"))
+            wait = self._cooldown_seconds()
+            left = int(wait - (now - self.gave_up_at)) if wait else -1
+            if wait and left <= 0:
                 self.retries = 0
                 self.gave_up_at = None
-                self.last_change = now
+                self.pos_change = now
+                self.zap_time = now
+                self.ecm_last = now
+                self.started = False
+                self.moves = 0
+                self.state = T("إعادة المحاولة...", "Retrying...")
+            else:
+                self.state = (T("محاولة جديدة بعد %d ث", "Retrying in %ds") % left) if wait \
+                    else T("توقفت المحاولات لهذه القناة", "Attempts stopped for this channel")
             return
-        self._restart(stalled, limit)
+        self.retries += 1
+        self.recover(kind, stalled, source, "%d/%d" % (self.retries, limit))
 
     # --- recovery ------------------------------------------------------
-    def _restart(self, stalled, limit):
+    def _current_target(self):
         nav = self.session.nav
         target = None
         getter = getattr(nav, "getCurrentlyPlayingServiceOrGroup", None)
@@ -560,73 +1029,208 @@ class AutoZapCore(object):
                 target = None
         if target is None:
             target = nav.getCurrentlyPlayingServiceReference()
-        if target is None:
-            return
+        return target
 
-        self.retries += 1
+    def neighbour(self, target):
+        """Next playable TV channel in the current bouquet (for zap mode)."""
+        if parental_control_active():
+            return None
+        try:
+            ib = infobar()
+            servicelist = getattr(ib, "servicelist", None)
+            root = servicelist.getRoot()
+            refs = eServiceCenter.getInstance().list(root).getContent("R")
+            if not refs:
+                return None
+            my = ref_key(target.toString())
+            keys = [ref_key(r.toString()) for r in refs]
+            start = keys.index(my) if my in keys else -1
+            bad = 0
+            for flag in ("isMarker", "isDirectory", "isGroup"):
+                bad |= getattr(eServiceReference, flag, 0)
+            count = len(refs)
+            for step in range(1, min(count, 40) + 1):
+                r = refs[(start + step) % count]
+                if r.flags & bad:
+                    continue
+                s = r.toString()
+                f = s.split(":")
+                if f[0] != "1" or r.getPath() or ref_key(s) == my:
+                    continue
+                try:
+                    if int(f[2], 16) in RADIO_SERVICE_TYPES:
+                        continue
+                except (IndexError, ValueError):
+                    continue
+                return r
+        except Exception as e:
+            debug("neighbour lookup failed: %s" % e)
+        return None
+
+    def _zap_next(self):
+        ib = infobar()
+        for name in ("zapDown", "zapToNextChannel"):
+            fnc = getattr(ib, name, None)
+            if fnc is not None:
+                try:
+                    fnc()
+                    log(T("انتقال للقناة التالية", "Switched to next channel"))
+                    return True
+                except Exception as e:
+                    log("zap next failed: %s" % e)
+        return False
+
+    def recover(self, kind, stalled, source, counter):
+        nav = self.session.nav
+        target = self._current_target()
+        if target is None:
+            return False
+        attempt = max(1, self.retries)
+        step = min(attempt, 3) - 1
+        mode = cfg.mode.value
+        use_zap = kind == "dvb" and (mode == "zap" or (mode == "smart" and attempt >= 2))
+        other = self.neighbour(target) if use_zap else None
+
         self.restarts += 1
         self.awaiting_result = True
+        self.last_recover_time = time.time()
+        if self.freeze_began is None:
+            self.freeze_began = self.last_recover_time
         name = self.channel or "?"
-        self.last_action = "%s  %s  (%d/%d)" % (time.strftime("%H:%M"), name, self.retries, limit)
+        method = T("تقليب سريع والعودة", "quick zap & back") if other is not None else T("إعادة تشغيل فورية", "instant restart")
+        self.last_action = "%s  %s  (%s - %s)" % (time.strftime("%H:%M:%S"), name, counter, method)
         self.state = T("جاري الإنعاش...", "Recovering...")
-        log("Frozen %ds -> restart %d/%d: %s" % (int(stalled), self.retries, limit, name))
-        notify(T("AutoZap: جاري إنعاش %s (%d/%d)", "AutoZap: recovering %s (%d/%d)")
-               % (name, self.retries, limit))
+        log(T("كشف [%s] بعد %.1f ث -> إنعاش %s (%s): %s", "Detected [%s] after %.1fs -> recovery %s (%s): %s")
+            % (source, stalled, counter, method, name))
+        self.toast(T("إنعاش تلقائي (%s)\n%s", "Auto recovery (%s)\n%s") % (counter, name))
 
-        # stopService + playService is a real restart on every image
-        # (playService() on the running reference alone is ignored).
-        self.pending_ref = target
-        try:
-            nav.stopService()
-        except Exception as e:
-            log("stopService failed: %s" % e)
-        # longer gap on each attempt so the softcam drops the old ECM session
-        self.play_timer.start(500 + 700 * (self.retries - 1), True)
+        if other is not None:
+            self.pending = {"target": target, "expect": ref_key(other.toString())}
+            self.in_restart = True
+            try:
+                play_ref(nav, other)
+            except Exception as e:
+                log("zap away failed: %s" % e)
+            finally:
+                self.in_restart = False
+            self.play_timer.start(ZAP_HOLD_MS[step], True)
+        else:
+            self.pending = {"target": target, "expect": None}
+            try:
+                nav.stopService()
+            except Exception as e:
+                log("stopService failed: %s" % e)
+            self.play_timer.start(RESTART_GAP_MS[step], True)
+        return True
+
+    def force_recover(self):
+        """Manual test from the diagnostics screen."""
+        if self.pending is not None:
+            return False
+        nav = self.session.nav
+        ref = nav.getCurrentlyPlayingServiceReference()
+        service = nav.getCurrentService()
+        if ref is None or service is None:
+            return False
+        self.channel = self._name(service)
+        kind, why = self.classify(ref, ref.toString(), service)
+        self.freeze_began = time.time()
+        return self.recover(kind or "dvb", 0.0, T("اختبار يدوي", "manual test"), T("اختبار", "test"))
 
     def _play_pending(self):
-        target, self.pending_ref = self.pending_ref, None
-        if target is None:
+        pending, self.pending = self.pending, None
+        if pending is None:
             return
         nav = self.session.nav
         try:
-            if nav.getCurrentlyPlayingServiceReference() is not None:
-                log("User changed channel during recovery - skipped")
+            cur = nav.getCurrentlyPlayingServiceReference()
+            if cur is not None and ref_key(cur.toString()) != pending["expect"]:
+                log(T("المستخدم غيّر القناة أثناء الإنعاش - تم الإلغاء",
+                      "User changed channel during recovery - cancelled"))
                 self._reset_state(None)
                 return
         except Exception:
             pass
         self.in_restart = True
         try:
-            try:
-                nav.playService(target, checkParentalControl=False)
-            except TypeError:
-                nav.playService(target)
+            play_ref(nav, pending["target"])
         except Exception as e:
             log("playService failed: %s" % e)
         finally:
             self.in_restart = False
-        cur = None
+        cur_str = None
         try:
             ref = nav.getCurrentlyPlayingServiceReference()
-            cur = ref.toString() if ref else None
+            cur_str = ref.toString() if ref else None
         except Exception:
             pass
-        self._reset_state(cur, keep_retries=True)
+        self._reset_state(cur_str, keep_retries=True)
 
-    # --- status for the setup screen ----------------------------------
+    # --- status ---------------------------------------------------------
     def status_text(self):
-        src = T("مؤكد", "Verified") if self.pts_validated else T("قيد التحقق", "Checking")
         lines = [
             T("الحالة: ", "State: ") + (self.state or "-"),
             T("القناة: ", "Channel: ") + (self.channel or "-"),
-            T("مصدر الكشف: ", "Detection: ") + src,
-            T("محاولات الإنعاش: %d", "Restarts: %d") % self.restarts,
-            T("إنعاش ناجح: %d", "Recovered: %d") % self.recovered,
-            T("القنوات المستثناة: %d", "Excluded channels: %d") % len(excluded_keys()),
+            T("مصدر الكشف: ", "Detection: ") + (self.source or "-"),
+            T("عمليات الإنعاش: %d  |  ناجحة: %d", "Recoveries: %d  |  successful: %d") % (self.restarts, self.recovered),
         ]
+        if self.last_downtime is not None:
+            lines.append(T("آخر عودة خلال: %.1f ث", "Last comeback: %.1fs") % self.last_downtime)
+        if self.best_downtime is not None:
+            lines.append(T("أسرع عودة: %.1f ث", "Fastest comeback: %.1fs") % self.best_downtime)
+        lines.append(T("القنوات المستثناة: %d", "Excluded channels: %d") % len(excluded_keys()))
         if self.last_action:
             lines.append(T("آخر إجراء:", "Last action:"))
             lines.append(self.last_action)
+        return "\n".join(lines)
+
+    def diagnostics_text(self):
+        nav = self.session.nav
+        yes, no = T("نعم", "Yes"), T("لا", "No")
+        lines = []
+        ref = nav.getCurrentlyPlayingServiceReference()
+        service = nav.getCurrentService()
+        if ref is None or service is None:
+            return T("لا توجد قناة قيد التشغيل.", "No channel is playing.")
+        info = service.info()
+        kind, why = self.classify(ref, ref.toString(), service)
+        lines.append(T("الجهاز: ", "Receiver: ") + self._model)
+        lines.append(T("القناة: ", "Channel: ") + self._name(service))
+        lines.append(T("نوع المراقبة: ", "Monitor type: ") +
+                     ({"dvb": "DVB", "iptv": "IPTV"}.get(kind) or (T("تخطي - ", "Skipped - ") + why)))
+        lines.append(T("مشفرة: ", "Encrypted: ") + (yes if self._is_crypted(info) else no))
+        w = self._video_width(info)
+        try:
+            h = info.getInfo(iServiceInformation.sVideoHeight) if info else -1
+        except Exception:
+            h = -1
+        lines.append(T("أبعاد الفيديو: ", "Video size: ") +
+                     ("%dx%d" % (w, h) if w > 0 else T("لا توجد صورة", "no picture")))
+        value, path = read_pts()
+        lines.append("PTS: " + (("%s = %s" % (path, value[-10:])) if value is not None
+                                else T("غير موجود بهذا الجهاز", "not available on this box")))
+        lines.append(T("PTS مؤكد العمل: ", "PTS verified: ") + (yes if self.hw_ok(cfg.hw_pts) else no))
+        m = ecm_mtime()
+        lines.append("ECM: " + (T("لا يوجد ملف ecm.info", "no ecm.info file") if m is None else
+                                T("آخر تحديث قبل %d ث - تحديثات: %d", "updated %ds ago - updates: %d")
+                                % (int(max(0, time.time() - m)), self.ecm_updates)))
+        lock = "-"
+        if iFrontendInformation is not None:
+            try:
+                fe = service.frontendInfo()
+                if fe is not None:
+                    lock = yes if fe.getFrontendInfo(iFrontendInformation.lockState) else no
+            except Exception:
+                pass
+        lines.append(T("إشارة التيونر مقفلة: ", "Tuner locked: ") + lock)
+        lines.append(T("الشبكة: ", "Network: ") + (T("متصلة", "up") if has_default_route() else T("مفصولة", "down")))
+        k = kind or "dvb"
+        learned = self._learned()["start"]
+        lines.append(T("عتبة كشف التجمد: %.1f ث  |  مهلة بدء القناة: %.1f ث",
+                       "Freeze threshold: %.1fs  |  start timeout: %.1fs") % (self.freeze_threshold(k), self.start_timeout(k)))
+        lines.append(T("زمن بدء هذه القناة (متعلَّم): ", "Learned start time: ") +
+                     ("%.1f %s" % (learned, T("ث", "s")) if learned else "-"))
+        lines.append(T("قرار المراقب: ", "Monitor decision: ") + (self.state or "-"))
         return "\n".join(lines)
 
 
@@ -643,146 +1247,43 @@ def sessionstart(reason, **kwargs):
 
 
 # ------------------------------------------------------------------------
-# Skins (drawn by the plugin itself - same look on every image skin)
-# ------------------------------------------------------------------------
-C_BG = "#000b1a2e"
-C_PANEL = "#00102440"
-C_GOLD = "#00f0a500"
-C_CYAN = "#0019c3e6"
-C_TEXT = "#00ffffff"
-C_DIM = "#009fb3c8"
-
-
-def _button_row(z, y, h, font, x0, width, gap):
-    colors = (("key_red", "#00b3261e"), ("key_green", "#00188a2e"),
-              ("key_yellow", "#00b58900"), ("key_blue", "#001c5fb8"))
-    out = []
-    for i, (name, col) in enumerate(colors):
-        x = x0 + i * (width + gap)
-        out.append('<eLabel position="%d,%d" size="%d,%d" backgroundColor="%s" zPosition="1" />'
-                   % (z(x), z(y + h - 5), z(width), z(5), col))
-        out.append('<widget source="%s" render="Label" position="%d,%d" size="%d,%d" font="Regular;%d" '
-                   'halign="center" valign="center" foregroundColor="%s" backgroundColor="%s" '
-                   'transparent="1" zPosition="2" />'
-                   % (name, z(x), z(y), z(width), z(h - 5), z(font), C_TEXT, C_BG))
-    return "\n  ".join(out)
-
-
-def _header(z, W, title_font=30):
-    k = skin_scale()
-    logo = logo_file(k)
-    size = 105 if k >= 1.4 else 70
-    parts = [
-        '<eLabel position="0,0" size="%d,%d" backgroundColor="%s" zPosition="0" />' % (z(W), z(80), C_BG),
-        '<eLabel position="0,%d" size="%d,%d" backgroundColor="%s" zPosition="1" />' % (z(80), z(W), max(2, z(3)), C_GOLD),
-        '<widget source="title" render="Label" position="%d,%d" size="%d,%d" font="Regular;%d" '
-        'foregroundColor="%s" backgroundColor="%s" transparent="1" valign="center" zPosition="2" />'
-        % (z(100), z(6), z(W - 330), z(42), z(title_font), C_TEXT, C_BG),
-        '<widget source="subtitle" render="Label" position="%d,%d" size="%d,%d" font="Regular;%d" '
-        'foregroundColor="%s" backgroundColor="%s" transparent="1" valign="center" zPosition="2" />'
-        % (z(100), z(48), z(W - 330), z(26), z(18), C_GOLD, C_BG),
-    ]
-    if logo and size + z(15) <= z(100) and size <= z(80):
-        # opaque image drawn at its native pixel size, centred in the header
-        parts.append('<ePixmap position="%d,%d" size="%d,%d" pixmap="%s" zPosition="2" />'
-                     % (z(15), (z(80) - size) // 2, size, size, logo))
-    return "\n  ".join(parts)
-
-
-def setup_skin():
-    k = skin_scale()
-
-    def z(v):
-        return int(round(v * k))
-
-    W, H = 1040, 620
-    return """
-<screen name="AutoZapSetupV2" position="center,center" size="%(w)d,%(h)d" flags="wfNoBorder" backgroundColor="%(bg)s" title="AutoZap Recovery">
-  %(header)s
-  <widget name="badge_on" position="%(bx)d,%(by)d" size="%(bw)d,%(bh)d" font="Regular;%(bf)d" halign="center" valign="center" foregroundColor="#00ffffff" backgroundColor="#00188a2e" zPosition="3" />
-  <widget name="badge_off" position="%(bx)d,%(by)d" size="%(bw)d,%(bh)d" font="Regular;%(bf)d" halign="center" valign="center" foregroundColor="#00ffffff" backgroundColor="#00b3261e" zPosition="3" />
-  <widget name="config" position="%(cx)d,%(cy)d" size="%(cw)d,%(ch)d" backgroundColor="%(bg)s" scrollbarMode="showOnDemand" zPosition="1" />
-  <eLabel position="%(px)d,%(cy)d" size="%(pw)d,%(ch)d" backgroundColor="%(panel)s" zPosition="0" />
-  <eLabel position="%(px)d,%(cy)d" size="%(stripe)d,%(ch)d" backgroundColor="%(cyan)s" zPosition="1" />
-  <widget source="status_title" render="Label" position="%(ptx)d,%(pty)d" size="%(ptw)d,%(pth)d" font="Regular;%(ptf)d" halign="%(al)s" foregroundColor="%(cyan)s" backgroundColor="%(panel)s" transparent="1" zPosition="2" />
-  <widget source="status" render="Label" position="%(ptx)d,%(psy)d" size="%(ptw)d,%(psh)d" font="Regular;%(psf)d" halign="%(al)s" foregroundColor="%(text)s" backgroundColor="%(panel)s" transparent="1" zPosition="2" />
-  <widget source="help" render="Label" position="%(cx)d,%(hy)d" size="%(fullw)d,%(hh)d" font="Regular;%(hf)d" halign="%(al)s" foregroundColor="%(dim)s" backgroundColor="%(bg)s" transparent="1" valign="center" zPosition="2" />
-  <eLabel position="0,%(ly)d" size="%(w)d,%(line)d" backgroundColor="%(gold)s" zPosition="1" />
-  %(buttons)s
-  <widget source="copyright" render="Label" position="0,%(fy)d" size="%(w)d,%(fh)d" font="Regular;%(ff)d" halign="center" valign="center" foregroundColor="%(gold)s" backgroundColor="%(bg)s" transparent="1" zPosition="2" />
-</screen>""" % dict(
-        w=z(W), h=z(H), bg=C_BG, panel=C_PANEL, gold=C_GOLD, cyan=C_CYAN, text=C_TEXT, dim=C_DIM,
-        header=_header(z, W), al="right" if is_arabic() else "left",
-        bx=z(W - 190), by=z(22), bw=z(170), bh=z(36), bf=z(20),
-        cx=z(20), cy=z(100), cw=z(620), ch=z(390),
-        px=z(660), pw=z(360), stripe=max(2, z(4)),
-        ptx=z(680), pty=z(110), ptw=z(330), pth=z(34), ptf=z(24),
-        psy=z(150), psh=z(330), psf=z(19),
-        hy=z(495), fullw=z(1000), hh=z(28), hf=z(17),
-        ly=z(528), line=max(1, z(2)),
-        buttons=_button_row(z, 538, 44, 20, 20, 235, 20),
-        fy=z(588), fh=z(28), ff=z(17))
-
-
-def log_skin():
-    k = skin_scale()
-
-    def z(v):
-        return int(round(v * k))
-
-    W, H = 1040, 620
-    return """
-<screen name="AutoZapLogV2" position="center,center" size="%(w)d,%(h)d" flags="wfNoBorder" backgroundColor="%(bg)s" title="AutoZap Recovery - Log">
-  %(header)s
-  <eLabel position="%(x)d,%(y)d" size="%(tw)d,%(th)d" backgroundColor="%(panel)s" zPosition="0" />
-  <widget name="text" position="%(ix)d,%(iy)d" size="%(iw)d,%(ih)d" font="Regular;%(f)d" foregroundColor="%(text)s" backgroundColor="%(panel)s" transparent="1" zPosition="1" />
-  <eLabel position="0,%(ly)d" size="%(w)d,%(line)d" backgroundColor="%(gold)s" zPosition="1" />
-  %(buttons)s
-  <widget source="copyright" render="Label" position="0,%(fy)d" size="%(w)d,%(fh)d" font="Regular;%(ff)d" halign="center" valign="center" foregroundColor="%(gold)s" backgroundColor="%(bg)s" transparent="1" zPosition="2" />
-</screen>""" % dict(
-        w=z(W), h=z(H), bg=C_BG, panel=C_PANEL, gold=C_GOLD, text=C_TEXT,
-        header=_header(z, W),
-        x=z(20), y=z(100), tw=z(1000), th=z(420),
-        ix=z(35), iy=z(110), iw=z(970), ih=z(400), f=z(18),
-        ly=z(528), line=max(1, z(2)),
-        buttons=_button_row(z, 538, 44, 20, 20, 235, 20),
-        fy=z(588), fh=z(28), ff=z(17))
-
-
-# ------------------------------------------------------------------------
 # Screens
 # ------------------------------------------------------------------------
-class AutoZapLog(Screen):
-    def __init__(self, session):
-        self.skin = log_skin()
+class AutoZapText(Screen):
+    """Shared layout for the log and diagnostics screens."""
+
+    def __init__(self, session, name):
+        self.skin = text_skin(name)
         Screen.__init__(self, session)
         self["title"] = StaticText("AutoZap Recovery")
-        self["subtitle"] = StaticText(T("سجل الأحداث (الأحدث أولاً)", "Event log (newest first)"))
-        self["copyright"] = StaticText("Designed & Developed by %s  |  %s" % (AUTHOR, COPYRIGHT))
-        self["key_red"] = StaticText(T("مسح السجل", "Clear log"))
-        self["key_green"] = StaticText(T("تحديث", "Refresh"))
+        self["subtitle"] = StaticText("")
+        self["copyright"] = StaticText(copyright_text())
+        self["key_red"] = StaticText("")
+        self["key_green"] = StaticText("")
         self["key_yellow"] = StaticText("")
-        self["key_blue"] = StaticText(T("رجوع", "Back"))
+        self["key_blue"] = StaticText("")
         self["text"] = ScrollLabel("")
+
+
+class AutoZapLog(AutoZapText):
+    def __init__(self, session):
+        AutoZapText.__init__(self, session, "AutoZapLogV3")
+        self["subtitle"].setText(T("سجل الأحداث (الأحدث أولاً)", "Event log (newest first)"))
+        self["key_red"].setText(T("مسح السجل", "Clear log"))
+        self["key_green"].setText(T("تحديث", "Refresh"))
+        self["key_blue"].setText(T("رجوع", "Back"))
         self["actions"] = ActionMap(["OkCancelActions", "DirectionActions", "ColorActions"], {
-            "ok": self.close,
-            "cancel": self.close,
-            "blue": self.close,
-            "red": self.clear,
-            "green": self.load,
-            "up": self["text"].pageUp,
-            "down": self["text"].pageDown,
-            "left": self["text"].pageUp,
-            "right": self["text"].pageDown,
+            "ok": self.close, "cancel": self.close, "blue": self.close,
+            "red": self.clear, "green": self.load,
+            "up": self["text"].pageUp, "down": self["text"].pageDown,
+            "left": self["text"].pageUp, "right": self["text"].pageDown,
         }, -1)
         self.onLayoutFinish.append(self.load)
 
     def load(self):
-        text = read_log_tail()
-        self["text"].setText(text or T("السجل فارغ. تُسجَّل هنا كل عمليات الإنعاش، "
-                                        "وفعّل (سجل التشخيص) لعرض أسباب التخطي.",
-                                        "Log is empty. Every recovery is written here; enable "
-                                        "'Debug log' to also see skip reasons."))
+        self["text"].setText(read_log_tail() or T(
+            "السجل فارغ.\nتُسجَّل هنا كل عمليات الإنعاش، وفعّل (سجل التشخيص) لعرض أسباب التخطي.",
+            "Log is empty.\nEvery recovery is written here; enable 'Debug log' to also see skip reasons."))
 
     def clear(self):
         for path in (LOG_FILE, LOG_FILE + ".1"):
@@ -793,7 +1294,75 @@ class AutoZapLog(Screen):
         self.load()
 
 
+class AutoZapDiagnostics(AutoZapText):
+    def __init__(self, session):
+        AutoZapText.__init__(self, session, "AutoZapDiagV3")
+        self["subtitle"].setText(T("فحص الجهاز والقناة الحالية - يتحدث كل ثانية",
+                                   "Receiver & current channel check - live"))
+        self["key_red"].setText(T("رجوع", "Back"))
+        self["key_green"].setText(T("اختبار الإنعاش الآن", "Test recovery now"))
+        self["key_yellow"].setText(T("اختبار الإشعار", "Test notification"))
+        self["key_blue"].setText(T("السجل", "Log"))
+        self._conns = []
+        self["actions"] = ActionMap(["OkCancelActions", "DirectionActions", "ColorActions"], {
+            "ok": self.close, "cancel": self.close, "red": self.close,
+            "green": self.test_recovery, "yellow": self.test_toast,
+            "blue": lambda: self.session.open(AutoZapLog),
+            "up": self["text"].pageUp, "down": self["text"].pageDown,
+        }, -1)
+        self.timer = eTimer()
+        connect_timer(self.timer, self.refresh, self._conns)
+        self.onLayoutFinish.append(self._start)
+        self.onClose.append(self.timer.stop)
+
+    def _start(self):
+        self.refresh()
+        self.timer.start(1000, False)
+
+    def refresh(self):
+        if core is None:
+            text = T("المراقبة غير نشطة - أعد تشغيل الواجهة.", "Monitor not running - restart the GUI.")
+        else:
+            try:
+                text = core.diagnostics_text()
+            except Exception as e:
+                text = "Error: %s" % e
+        self["text"].setText(text)
+
+    def test_recovery(self):
+        if core is None or not core.force_recover():
+            self.session.open(MessageBox, T("لا يمكن الاختبار الآن - لا توجد قناة.", "Cannot test now - no channel."),
+                              MessageBox.TYPE_INFO, timeout=4)
+
+    def test_toast(self):
+        if core is None:
+            return
+        mode = cfg.notify.value
+        if mode == "off":
+            self.session.open(MessageBox, T("الإشعارات متوقفة من الإعدادات.", "Notifications are off in settings."),
+                              MessageBox.TYPE_INFO, timeout=4)
+            return
+        core.toast(T("هذا إشعار تجريبي\nالإشعارات تعمل بشكل صحيح", "Test notification\nnotifications are working"))
+
+
 class AutoZapSetup(ConfigListScreen, Screen):
+    HELP = {
+        "enabled": ("تشغيل أو إيقاف الإنعاش التلقائي بالكامل.", "Turn automatic recovery on or off."),
+        "scope": ("المشفرة فقط = الأنسب لمشاكل الشيرنج والكروت.", "Encrypted only = best for sharing/card issues."),
+        "iptv": ("مراقبة روابط IPTV الموجودة في قائمة القنوات.", "Watch IPTV streams in your bouquets."),
+        "mode": ("طريقة الإنعاش: نفس القناة، أو تقليب لقناة أخرى ثم العودة.", "Restart the same channel or zap away and back."),
+        "freeze_time": ("الذكي: يكشف التجمد خلال 2.5 ث ويتكيف مع كل قناة.", "Smart: detects a freeze in 2.5 s and adapts per channel."),
+        "grace": ("الذكي: يتعلم كم تحتاج كل قناة لتظهر الصورة.", "Smart: learns how long each channel needs to start."),
+        "max_retries": ("عدد محاولات الإنعاش قبل التوقف.", "Attempts before giving up."),
+        "on_fail": ("ماذا يحدث إذا فشلت كل المحاولات.", "What to do when all attempts fail."),
+        "cooldown": ("بعد فشل المحاولات يعيد تلقائياً: 20 ث، 40 ث، 90 ث...", "After failed attempts retries automatically: 20s, 40s, 90s..."),
+        "ecm_watch": ("كشف توقف الشفرة من ملف ecm.info (للأجهزة بدون PTS).", "Detect a stopped softcam via ecm.info."),
+        "check_net": ("لا ينعش إذا كانت الشبكة مفصولة.", "Skip recovery while the network is down."),
+        "notify": ("شكل الإشعار عند الإنعاش.", "How recoveries are announced."),
+        "debug": ("يسجل أسباب التخطي في /tmp/autozap.log", "Writes skip reasons to /tmp/autozap.log"),
+        "language": ("لغة البلجن - تتغير الواجهة فوراً.", "Plugin language - applies immediately."),
+    }
+
     def __init__(self, session):
         self.skin = setup_skin()
         Screen.__init__(self, session)
@@ -801,40 +1370,54 @@ class AutoZapSetup(ConfigListScreen, Screen):
         self.list = []
         ConfigListScreen.__init__(self, self.list, session=session)
         self._conns = []
+        self._lang_before = cfg.language.value
 
         self["title"] = StaticText("AutoZap Recovery")
-        self["subtitle"] = StaticText(T("الإنعاش الذكي للقنوات المتجمدة  |  الإصدار %s",
-                                        "Smart freeze recovery for Enigma2  |  v%s") % VERSION)
-        self["badge_on"] = Label(T("يعمل", "ACTIVE"))
-        self["badge_off"] = Label(T("متوقف", "OFF"))
-        self["status_title"] = StaticText(T("الحالة المباشرة", "Live status"))
+        self["subtitle"] = StaticText("")
+        self["badge_on"] = Label("")
+        self["badge_off"] = Label("")
+        self["status_title"] = StaticText("")
         self["status"] = StaticText("")
         self["help"] = StaticText("")
-        self["copyright"] = StaticText("Designed & Developed by %s  |  %s" % (AUTHOR, COPYRIGHT))
-        self["key_red"] = StaticText(T("إلغاء", "Cancel"))
-        self["key_green"] = StaticText(T("حفظ", "Save"))
-        self["key_yellow"] = StaticText(T("السجل", "Log"))
-        self["key_blue"] = StaticText(T("حول", "About"))
+        self["copyright"] = StaticText("")
+        self["key_red"] = StaticText("")
+        self["key_green"] = StaticText("")
+        self["key_yellow"] = StaticText("")
+        self["key_blue"] = StaticText("")
         self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
-            "green": self.save,
-            "ok": self.save,
-            "red": self.cancel,
-            "cancel": self.cancel,
-            "yellow": self.open_log,
-            "blue": self.about,
+            "green": self.save, "ok": self.save,
+            "red": self.cancel, "cancel": self.cancel,
+            "yellow": lambda: self.session.open(AutoZapLog),
+            "blue": lambda: self.session.open(AutoZapDiagnostics),
         }, -2)
+        try:
+            self["menu_actions"] = ActionMap(["MenuActions"], {"menu": self.about}, -2)
+        except Exception:
+            pass
 
         self.status_timer = eTimer()
         connect_timer(self.status_timer, self._update_status, self._conns)
         self.onLayoutFinish.append(self._layout_finished)
         self.onClose.append(self.status_timer.stop)
+        self._apply_texts()
         self._build()
         try:
             self["config"].onSelectionChanged.append(self._update_help)
         except Exception:
             pass
 
-    # --- ui ------------------------------------------------------------
+    def _apply_texts(self):
+        self["subtitle"].setText(T("إنعاش فوري وذكي للقنوات  |  الإصدار %s",
+                                   "Instant smart channel recovery  |  v%s") % VERSION)
+        self["badge_on"].setText(T("يعمل", "ACTIVE"))
+        self["badge_off"].setText(T("متوقف", "OFF"))
+        self["status_title"].setText(T("الحالة المباشرة", "Live status"))
+        self["copyright"].setText(copyright_text())
+        self["key_red"].setText(T("إلغاء", "Cancel"))
+        self["key_green"].setText(T("حفظ", "Save"))
+        self["key_yellow"].setText(T("السجل", "Log"))
+        self["key_blue"].setText(T("الفحص والاختبار", "Diagnostics"))
+
     def _layout_finished(self):
         self.setTitle("AutoZap Recovery v%s | %s" % (VERSION, AUTHOR))
         self._update_badge()
@@ -843,7 +1426,7 @@ class AutoZapSetup(ConfigListScreen, Screen):
         self.status_timer.start(2000, False)
 
     def _update_badge(self):
-        if cfg.enabled.value:
+        if on(cfg.enabled):
             self["badge_on"].show()
             self["badge_off"].hide()
         else:
@@ -853,33 +1436,19 @@ class AutoZapSetup(ConfigListScreen, Screen):
     def _update_status(self):
         if core is None:
             text = T("المراقبة غير نشطة - أعد تشغيل الواجهة", "Monitor not running - restart the GUI")
-        elif not cfg.enabled.value:
+        elif not on(cfg.enabled):
             text = T("الإنعاش التلقائي متوقف.\nفعّله من القائمة أو من\nزر الإضافات (الأزرق).",
                      "Auto recovery is disabled.\nEnable it here or from the\nExtensions (blue) menu.")
         else:
             text = core.status_text()
         self["status"].setText(text)
 
-    HELP = {
-        "enabled": ("تشغيل أو إيقاف المراقبة بالكامل.", "Turn monitoring on or off."),
-        "scope": ("المشفرة فقط = الأنسب لمشاكل الشيرنج والكروت.", "Encrypted only = best for sharing/card issues."),
-        "iptv": ("مراقبة روابط IPTV داخل قائمة القنوات.", "Watch IPTV streams in your bouquets."),
-        "freeze_time": ("مدة توقف الصورة الفعلي قبل الإنعاش.", "How long the picture must be frozen."),
-        "grace": ("وقت يُترك للقناة لتبدأ بعد التقليب.", "Time given to a channel to start after zapping."),
-        "max_retries": ("عدد محاولات الإنعاش قبل التوقف المؤقت.", "Attempts before pausing recovery."),
-        "cooldown": ("متى يعيد المحاولة بعد فشل كل المحاولات.", "When to try again after all attempts fail."),
-        "check_net": ("لا ينعش إذا كانت الشبكة مفصولة.", "Skip recovery while the network is down."),
-        "notify": ("رسالة صغيرة على الشاشة عند كل إنعاش.", "Small on-screen popup on every recovery."),
-        "debug": ("يسجل أسباب التخطي في /tmp/autozap.log", "Writes skip reasons to /tmp/autozap.log"),
-        "language": ("لغة البلجن - تطبق بعد إعادة تشغيل الواجهة.", "Plugin language - applies after GUI restart."),
-    }
-
     def _update_help(self):
         try:
             cur = self["config"].getCurrent()
         except Exception:
             cur = None
-        text = ""
+        text = T("زر MENU: حول البلجن", "MENU: about")
         if cur:
             for key, pair in self.HELP.items():
                 if getattr(cfg, key, None) is cur[1]:
@@ -889,21 +1458,28 @@ class AutoZapSetup(ConfigListScreen, Screen):
 
     def _build(self):
         lst = [getConfigListEntry(T("تفعيل الإنعاش التلقائي", "Enable auto recovery"), cfg.enabled)]
-        if cfg.enabled.value:
+        if on(cfg.enabled):
             lst += [
                 getConfigListEntry(T("نطاق المراقبة", "Monitor scope"), cfg.scope),
                 getConfigListEntry(T("مراقبة قنوات IPTV", "Monitor IPTV streams"), cfg.iptv),
-                getConfigListEntry(T("مدة التجمد قبل الإنعاش", "Freeze time before recovery"), cfg.freeze_time),
-                getConfigListEntry(T("مهلة بدء القناة بعد التقليب", "Start-up grace after zap"), cfg.grace),
+                getConfigListEntry(T("طريقة الإنعاش", "Recovery method"), cfg.mode),
+                getConfigListEntry(T("سرعة كشف التجمد", "Freeze detection speed"), cfg.freeze_time),
+                getConfigListEntry(T("مهلة تشغيل القناة", "Channel start timeout"), cfg.grace),
                 getConfigListEntry(T("أقصى عدد محاولات", "Max attempts"), cfg.max_retries),
-                getConfigListEntry(T("إعادة المحاولة بعد", "Retry again after"), cfg.cooldown),
+                getConfigListEntry(T("عند فشل كل المحاولات", "When all attempts fail"), cfg.on_fail),
+                getConfigListEntry(T("إعادة المحاولة بعد الفشل", "Retry after failure"), cfg.cooldown),
+                getConfigListEntry(T("مراقبة الشفرة (ECM)", "ECM watch"), cfg.ecm_watch),
                 getConfigListEntry(T("فحص الشبكة قبل الإنعاش", "Check network first"), cfg.check_net),
-                getConfigListEntry(T("إظهار إشعار عند الإنعاش", "Show notification"), cfg.notify),
+                getConfigListEntry(T("الإشعارات", "Notifications"), cfg.notify),
                 getConfigListEntry(T("سجل التشخيص", "Debug log"), cfg.debug),
             ]
         lst.append(getConfigListEntry(T("لغة البلجن", "Plugin language"), cfg.language))
         self.list = lst
         widget = self["config"]
+        try:
+            index = widget.getCurrentIndex()
+        except Exception:
+            index = 0
         try:
             widget.list = lst
         except Exception:
@@ -912,13 +1488,24 @@ class AutoZapSetup(ConfigListScreen, Screen):
             widget.l.setList(lst)
         except Exception:
             pass
+        try:
+            widget.setCurrentIndex(min(index, len(lst) - 1))
+        except Exception:
+            pass
 
     def _after_key(self):
-        cur = self["config"].getCurrent()
-        if cur and cur[1] is cfg.enabled:
+        try:
+            cur = self["config"].getCurrent()
+        except Exception:
+            cur = None
+        if cur and cur[1] is cfg.language:
+            relabel()
+            self._apply_texts()
+            self._build()
+        elif cur and cur[1] is cfg.enabled:
             self._build()
             self._update_badge()
-            self._update_status()
+        self._update_status()
         self._update_help()
 
     def keyLeft(self):
@@ -929,12 +1516,27 @@ class AutoZapSetup(ConfigListScreen, Screen):
         ConfigListScreen.keyRight(self)
         self._after_key()
 
-    # --- actions -------------------------------------------------------
     def save(self):
         cfg.save()
         configfile.save()
         if core:
             core.reset()
+        if cfg.language.value != self._lang_before:
+            self.session.openWithCallback(self._restart_answer, MessageBox,
+                                          T("تم تغيير اللغة.\nأسماء البلجن في القوائم تتغير بعد إعادة تشغيل الواجهة.\nإعادة التشغيل الآن؟",
+                                            "Language changed.\nMenu entries update after a GUI restart.\nRestart now?"),
+                                          MessageBox.TYPE_YESNO)
+        else:
+            self.close()
+
+    def _restart_answer(self, answer):
+        if answer:
+            try:
+                from Screens.Standby import TryQuitMainloop
+                self.session.open(TryQuitMainloop, 3)
+                return
+            except Exception as e:
+                log("GUI restart failed: %s" % e)
         self.close()
 
     def cancel(self):
@@ -944,25 +1546,23 @@ class AutoZapSetup(ConfigListScreen, Screen):
         except Exception:
             for item in self.list:
                 item[1].cancel()
+        relabel()
         self.close()
-
-    def open_log(self):
-        self.session.open(AutoZapLog)
 
     def about(self):
         text = "\n".join([
             "AutoZap Recovery  v%s" % VERSION,
             "",
-            "Designed & Developed by: %s" % AUTHOR,
-            COPYRIGHT,
+            T("تصميم وتطوير: %s", "Designed & Developed by: %s") % AUTHOR,
+            T("جميع الحقوق محفوظة (C) 2026", "(C) 2026 All Rights Reserved"),
             "",
-            T("إنعاش ذكي للقنوات المتجمدة يعمل فقط عند حدوث تجمد فعلي،",
-              "Smart recovery that acts only on a real, confirmed freeze"),
+            T("ينعش القنوات تلقائياً عند التجمد أو التوقف أو عدم ظهور الصورة،",
+              "Recovers channels automatically when they freeze, stop or never start,"),
             T("ولا يتدخل في القنوات السليمة أو الراديو أو التسجيلات.",
               "and never touches healthy channels, radio or recordings."),
             "",
-            T("استثناء قناة: من زر الإضافات (الأزرق) أثناء المشاهدة.",
-              "Exclude a channel: Extensions (blue) menu while watching."),
+            T("زر الإضافات (الأزرق) أثناء المشاهدة: تشغيل/إيقاف، واستثناء القناة.",
+              "Extensions (blue) while watching: on/off and exclude channel."),
             "",
             "Enigma2 Pro Community",
         ])
@@ -977,12 +1577,12 @@ def main(session, **kwargs):
 
 
 def toggle(session, **kwargs):
-    cfg.enabled.value = not cfg.enabled.value
+    cfg.enabled.value = "false" if on(cfg.enabled) else "true"
     cfg.enabled.save()
     configfile.save()
     if core:
         core.reset()
-    text = (T("AutoZap Recovery: تم التفعيل", "AutoZap Recovery: enabled") if cfg.enabled.value
+    text = (T("AutoZap Recovery: تم التفعيل", "AutoZap Recovery: enabled") if on(cfg.enabled)
             else T("AutoZap Recovery: تم الإيقاف", "AutoZap Recovery: disabled"))
     session.open(MessageBox, text, MessageBox.TYPE_INFO, timeout=3)
 
@@ -999,7 +1599,11 @@ def toggle_exclude(session, **kwargs):
         return
     key = ref_key(ref.toString())
     keys = excluded_keys()
-    name = core.channel if (core and core.channel) else key
+    name = key
+    try:
+        name = AutoZapCore._name(session.nav.getCurrentService())
+    except Exception:
+        pass
     if key in keys:
         keys.remove(key)
         text = T("تمت إعادة القناة للمراقبة:\n%s", "Channel monitored again:\n%s") % name
@@ -1019,7 +1623,7 @@ def Plugins(**kwargs):
     return [
         PluginDescriptor(name=name, where=PluginDescriptor.WHERE_SESSIONSTART, fnc=sessionstart),
         PluginDescriptor(name=name,
-                         description=T("إنعاش القنوات المتجمدة تلقائياً", "Auto-recovery for frozen channels")
+                         description=T("إنعاش القنوات المتجمدة تلقائياً", "Automatic recovery of frozen channels")
                          + " | " + AUTHOR,
                          where=PluginDescriptor.WHERE_PLUGINMENU, icon=icon, fnc=main),
         PluginDescriptor(name=T("AutoZap: تشغيل / إيقاف", "AutoZap: On / Off"),
@@ -1362,7 +1966,7 @@ cat > /tmp/autozap_clean.sh << 'AZ_EOF'
 S=/etc/enigma2/settings
 if [ -f "$S" ]; then
     grep -v '^config\.plugins\.autozap_alamri\.' "$S" > /tmp/az_settings.new
-    grep -E '^config\.plugins\.autozap_alamri\.(enabled|scope|iptv|freeze_time|grace|max_retries|cooldown|check_net|notify|debug|language|excluded)=' "$S" >> /tmp/az_settings.new
+    grep -E '^config\.plugins\.autozap_alamri\.(enabled|scope|iptv|mode|max_retries|on_fail|ecm_watch|check_net|debug|language|excluded|hw_pts|hw_video)=' "$S" >> /tmp/az_settings.new
     cat /tmp/az_settings.new > "$S"
     rm -f /tmp/az_settings.new
 fi
@@ -1401,9 +2005,9 @@ az_restart_gui() {
 }
 
 echo ""
-echo ">>> AutoZap Recovery v2.1 installed successfully."
-echo ">>> Plugins menu  : AutoZap Recovery"
-echo ">>> Blue button   : AutoZap On/Off  -  Exclude/include channel"
+echo ">>> AutoZap Recovery v4.0 installed successfully."
+echo ">>> Plugins menu : AutoZap Recovery"
+echo ">>> Blue button  : AutoZap On/Off  -  Exclude/include channel"
 echo ">>> Restarting Enigma2 GUI in 2 seconds..."
 echo "=============================================="
 az_restart_gui /tmp/autozap_clean.sh
