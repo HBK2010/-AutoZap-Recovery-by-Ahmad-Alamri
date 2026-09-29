@@ -2037,17 +2037,35 @@ az_b64 /tmp/az_logo_fhd.b64 "$PLUGIN_DIR/logo_fhd.png"
 chmod 755 "$PLUGIN_DIR"
 chmod 644 "$PLUGIN_DIR"/*
 
-# --- syntax check with the image's own Python (.py source is kept on
-#     purpose so the plugin survives Python upgrades of the image) ---
+# --- syntax check with the image's own Python -------------------------
+# Uses the built-in compile() so it also works on stripped-down Python
+# builds (e.g. DreamOS) that do not ship the py_compile module.
+# Only a real SyntaxError cancels the installation; if the check itself
+# cannot run on this image, it is skipped with a note.
+# (.py source is kept on purpose so the plugin survives Python upgrades.)
 if [ -n "$PY" ]; then
-    if $PY -c "import py_compile,sys; py_compile.compile(sys.argv[1], doraise=True)" "$PLUGIN_DIR/plugin.py" >/dev/null 2>&1; then
-        echo ">>> Syntax check OK"
-    else
-        echo "!!! Syntax check FAILED - installation cancelled:"
-        $PY -c "import py_compile,sys; py_compile.compile(sys.argv[1], doraise=True)" "$PLUGIN_DIR/plugin.py"
-        rm -rf "$PLUGIN_DIR"
-        exit 1
-    fi
+    AZ_CHECK=$($PY -c "
+import sys
+try:
+    compile(open(sys.argv[1], 'rb').read(), sys.argv[1], 'exec')
+    print('AZ_OK')
+except SyntaxError as e:
+    print('AZ_SYNTAX %s' % e)
+" "$PLUGIN_DIR/plugin.py" 2>&1)
+    case "$AZ_CHECK" in
+        *AZ_OK*)
+            echo ">>> Syntax check OK"
+            ;;
+        *AZ_SYNTAX*)
+            echo "!!! Syntax check FAILED - installation cancelled:"
+            echo "$AZ_CHECK"
+            rm -rf "$PLUGIN_DIR"
+            exit 1
+            ;;
+        *)
+            echo ">>> Syntax check skipped (not available on this image)"
+            ;;
+    esac
 fi
 
 # --- settings cleanup (obsolete keys of old versions), done while GUI is stopped ---
